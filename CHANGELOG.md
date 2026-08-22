@@ -15,9 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `NotificationDeliveryStatus`, reporting the real delivery outcome. A refused or
   unavailable notification is surfaced with the System Settings location to fix it, instead
   of failing silently.
-- `make bundle-release` and `make notarize` (`scripts/notarize_app.sh`), producing a
-  Developer ID signed, notarised and stapled bundle plus a checksummed zip. Gatekeeper
-  reports `source=Notarized Developer ID`.
+- Release notarisation via `trsdn/macos-notarization-broker` (profile
+  `opendefendrwatchr`), which builds from a pinned tag and signs in an isolated job so
+  Apple credentials never reach this repository. There is deliberately no local signing
+  path.
 - MIT `LICENSE`, and CI under `.github/workflows`: `validate-swift` (debug and release
   build, tests, unsigned bundle assembly, and a check that `LSUIElement` survives into
   `Info.plist`) and `secret-scan`.

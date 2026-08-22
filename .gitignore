@@ -3,5 +3,3 @@
 dist/
 *.profraw
 
-# Notarisation credentials — never commit.
-.release.env

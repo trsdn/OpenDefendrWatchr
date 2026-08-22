@@ -111,34 +111,24 @@ disabled otherwise: user notifications (no bundle identity) and launch-at-login
 
 ### Release builds and notarisation
 
-`make bundle` signs with a development certificate, which is fine on the machine that built
-it but is rejected by Gatekeeper anywhere else. For distribution:
+`make bundle` signs with whatever certificate is on the build machine, which is fine
+locally but rejected by Gatekeeper anywhere else. Signed releases are **not** produced
+here.
+
+Notarised builds come from [`trsdn/macos-notarization-broker`](https://github.com/trsdn/macos-notarization-broker),
+which builds from a pinned tag and signs in an isolated job, so Apple credentials are never
+exposed to this repository's code. Deliberately, there is no local signing path to drift
+out of sync with it.
 
 ```bash
-make bundle-release                       # Developer ID + secure timestamp
-NOTARY_PROFILE=<profile> make notarize    # submit, staple, verify
+# in a checkout of the broker
+scripts/request.sh opendefendrwatchr vX.Y.Z
 ```
 
-Store the credentials once, so no secret ever reaches the repo:
-
-```bash
-xcrun notarytool store-credentials <profile> \
-  --apple-id <you@example.com> --team-id <TEAMID> --password <app-specific-password>
-```
-
-`make bundle-release` fails if no Developer ID certificate is present rather than quietly
-falling back to a development cert. `make notarize` checks the signature *before* uploading,
-because notarisation otherwise rejects a wrongly signed bundle only after a multi-minute
-round trip. It ends with the check that actually matters — what Gatekeeper says on a machine
-that has never seen the build:
-
-```
-dist/OpenDefendrWatchr.app: accepted
-source=Notarized Developer ID
-```
-
-The stapled ticket means this holds offline too. Output is `dist/OpenDefendrWatchr-macos.zip`
-plus a `.sha256`.
+The broker owns the build adapter and the entitlements policy. A release that changes the
+bundle identifier, executable, layout, architecture, entitlements or minimum macOS version
+requires a reviewed profile update there — including the check that `LSUIElement` is still
+set, so the app cannot silently regain a Dock icon.
 
 `make probe` is also the quickest sanity check:
 

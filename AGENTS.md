@@ -35,9 +35,8 @@ Sources/OpenDefendrWatchr/                # Library target: OpenDefendrWatchrKit
 Sources/OpenDefendrWatchrApp/main.swift   # Executable entry point, --probe mode
 Tests/OpenDefendrWatchrTests/             # Unit tests (XCTest)
 scripts/build_swift_app.sh                # Assembles dist/OpenDefendrWatchr.app
-scripts/notarize_app.sh                   # Developer ID notarisation + stapling
 .github/workflows/                        # validate-swift, secret-scan
-Makefile                                  # build / run / probe / test / bundle / notarize / install / clean
+Makefile                                  # build / run / probe / test / bundle / install / clean
 README.md                                 # Human docs, incident write-up, limitations
 CHANGELOG.md                              # Keep a Changelog + SemVer
 ```
@@ -104,22 +103,25 @@ These are product decisions, not implementation details. Do not "improve" them a
 ```bash
 make build && make test     # must both pass before committing
 make probe                  # one live reading; sanity-check against `ps -Ao rss=,comm=`
-make bundle                 # dist/OpenDefendrWatchr.app (development signature)
-make bundle-release         # Developer ID + secure timestamp
-NOTARY_PROFILE=x make notarize
+make bundle                 # dist/OpenDefendrWatchr.app (local signature only)
 ```
 
-Signing splits deliberately: `make bundle` uses the development certificate and
-`--timestamp=none` so a local build never needs the network, while `DISTRIBUTION=1`
-(`make bundle-release`) requires Developer ID and a secure timestamp. Notarisation
-silently rejects anything else, so do not "simplify" these back into one path.
-Notarisation credentials live in a keychain profile or a gitignored `.release.env` —
-never in the repo.
-
 `make bundle` fails loudly if `LSUIElement` is missing from the generated Info.plist.
+
+## Releases
+
+Notarised builds come from `trsdn/macos-notarization-broker`, not from here. Do not add a
+local signing or notarisation path: the broker exists so Apple credentials never reach
+source-repository code, and a second path would drift out of sync with the reviewed
+profile.
+
+Changing the bundle identifier, executable name, `Info.plist` layout, minimum macOS
+version or entitlements breaks the broker profile `opendefendrwatchr` and requires a
+reviewed change there first.
 
 ## Git
 
 - Personal account identity: `trsdn` / `torsten.mahr@gmail.com`.
-- No GitHub remote. Do not create or push to one.
+- Remote: `git@github-personal:trsdn/OpenDefendrWatchr.git` (public). Use the SSH
+  host alias, not HTTPS, so the personal key is used.
 - Logical, scoped commits (Conventional Commits style).

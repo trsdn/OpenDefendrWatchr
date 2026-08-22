@@ -12,9 +12,6 @@ set -euo pipefail
 #   CONFIGURATION=debug         Build debug instead of release.
 #   CODESIGN_IDENTITY="..."     Explicit signing identity.
 #   SKIP_SIGN=1                 Do not code sign at all (CI / smoke checks).
-#   DISTRIBUTION=1              Sign for release: require a Developer ID
-#                               Application certificate and a secure timestamp,
-#                               so the bundle can be notarised.
 #
 # The bundle is written to dist/OpenDefendrWatchr.app. Installation is a separate
 # step (`make install`), so this script never touches /Applications.
@@ -25,7 +22,6 @@ APP_NAME="OpenDefendrWatchr"
 BUNDLE_ID="com.opendefendrwatchr.app"
 CONFIGURATION="${CONFIGURATION:-release}"
 SKIP_SIGN="${SKIP_SIGN:-0}"
-DISTRIBUTION="${DISTRIBUTION:-0}"
 
 version_from_changelog() {
   grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md 2>/dev/null \
@@ -66,16 +62,9 @@ find_signing_identity() {
     printf '%s\n' "$CODESIGN_IDENTITY"
     return 0
   fi
-  local identities label identity order
+  local identities label identity
   identities="$(security find-identity -v -p codesigning 2>/dev/null || true)"
-  # Notarisation only accepts Developer ID Application. Locally we prefer the
-  # development cert so a plain `make bundle` never needs the network.
-  if [[ "$DISTRIBUTION" == "1" ]]; then
-    order=("Developer ID Application")
-  else
-    order=("Apple Development" "Developer ID Application")
-  fi
-  for label in "${order[@]}"; do
+  for label in "Apple Development" "Developer ID Application"; do
     identity="$(printf '%s\n' "$identities" | grep "$label" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)"
     if [[ -n "$identity" ]]; then
       printf '%s\n' "$identity"
@@ -89,21 +78,9 @@ if [[ "$SKIP_SIGN" == "1" ]]; then
   echo "Skipping code signing"
 else
   IDENTITY="$(find_signing_identity || true)"
-  if [[ -z "$IDENTITY" && "$DISTRIBUTION" == "1" ]]; then
-    echo "DISTRIBUTION=1 requires a 'Developer ID Application' certificate." >&2
-    echo "Available identities:" >&2
-    security find-identity -v -p codesigning >&2 || true
-    exit 1
-  fi
   if [[ -n "$IDENTITY" ]]; then
     echo "Signing with: $IDENTITY"
-    # A secure timestamp is mandatory for notarisation and harmless otherwise,
-    # but it needs the network, so only pay for it on distribution builds.
-    if [[ "$DISTRIBUTION" == "1" ]]; then
-      codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP_DIR"
-    else
-      codesign --force --options runtime --timestamp=none --sign "$IDENTITY" "$APP_DIR"
-    fi
+    codesign --force --options runtime --timestamp=none --sign "$IDENTITY" "$APP_DIR"
   else
     # Ad-hoc signing keeps a stable-enough identity for UserDefaults and
     # notification permissions on a single machine.
