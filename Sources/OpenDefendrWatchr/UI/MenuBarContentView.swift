@@ -26,6 +26,15 @@ public struct MenuBarContentView: View {
         Button("Reveal Log in Finder") {
             revealLog()
         }
+        Button("Send Test Notification") {
+            model.sendTestNotification { status in
+                presentResult(
+                    title: status.isSuccess
+                        ? "Test notification sent" : "Test notification not delivered",
+                    message: status.userDescription
+                )
+            }
+        }
 
         Divider()
 
@@ -106,6 +115,7 @@ public struct MenuBarContentView: View {
     }
 
     private func presentResult(title: String, message: String) {
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = title

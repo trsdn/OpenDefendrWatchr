@@ -26,9 +26,18 @@ private struct StubSampler: MemorySampling {
 private final class SpyNotifier: AlertNotifying, @unchecked Sendable {
     var delivered: [ThresholdAlert] = []
     var authorizationRequested = false
+    var testSamples: [MemorySample?] = []
+    var testStatus: NotificationDeliveryStatus = .delivered
 
     func requestAuthorization() { authorizationRequested = true }
     func deliver(_ alert: ThresholdAlert) { delivered.append(alert) }
+    func deliverTest(
+        sample: MemorySample?,
+        completion: @escaping @Sendable (NotificationDeliveryStatus) -> Void
+    ) {
+        testSamples.append(sample)
+        completion(testStatus)
+    }
 }
 
 private struct StubError: Error, CustomStringConvertible {
@@ -131,5 +140,36 @@ final class WatchdogModelTests: XCTestCase {
         model.start()
         model.stop()
         XCTAssertTrue(notifier.authorizationRequested)
+    }
+
+    func testTestNotificationCarriesTheLatestReading() async {
+        // Deliberately below the warning threshold, so any entry in `delivered` can only
+        // have come from the test path.
+        let (model, notifier) = makeModel(samples: [Fixture.sample(bytes: 2 * Fixture.gb)])
+        await model.pollOnce()
+
+        var status: NotificationDeliveryStatus?
+        model.sendTestNotification { status = $0 }
+        // The stub calls back synchronously, but the hop to the main actor is a Task.
+        await Task.yield()
+
+        XCTAssertEqual(status, .delivered)
+        XCTAssertEqual(notifier.testSamples.count, 1)
+        XCTAssertEqual(notifier.testSamples.first??.processResidentBytes, 2 * Fixture.gb)
+        XCTAssertTrue(notifier.delivered.isEmpty, "a test must not count as a threshold alert")
+    }
+
+    func testTestNotificationReportsBlockedPermissions() async {
+        let notifier = SpyNotifier()
+        notifier.testStatus = .notAuthorized
+        let (model, _) = makeModel(
+            samples: [Fixture.sample(bytes: Fixture.gb)], notifier: notifier)
+
+        var status: NotificationDeliveryStatus?
+        model.sendTestNotification { status = $0 }
+        await Task.yield()
+
+        XCTAssertEqual(status, .notAuthorized)
+        XCTAssertFalse(status?.isSuccess ?? true)
     }
 }

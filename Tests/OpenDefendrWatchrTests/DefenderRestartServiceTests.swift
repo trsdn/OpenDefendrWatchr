@@ -114,4 +114,29 @@ final class AlertPresentationTests: XCTestCase {
         XCTAssertFalse(body.contains("Save your work"))
         XCTAssertTrue(body.contains("9.00 GB"))
     }
+
+    func testTestBodyShowsLiveFiguresRatherThanAContentFreePlaceholder() {
+        let body = AlertPresentation.testBody(
+            sample: Fixture.sample(bytes: 9 * Fixture.gb), processName: "wdavdaemon")
+        XCTAssertTrue(body.contains("9.00 GB"), body)
+        XCTAssertTrue(body.contains("free"), body)
+    }
+
+    func testTestBodyHandlesDefenderNotRunningAndNoSampleYet() {
+        let notRunning = AlertPresentation.testBody(
+            sample: Fixture.sample(bytes: nil), processName: "wdavdaemon")
+        XCTAssertTrue(notRunning.contains("not running"), notRunning)
+
+        let noSample = AlertPresentation.testBody(sample: nil, processName: "wdavdaemon")
+        XCTAssertTrue(noSample.contains("No wdavdaemon reading yet"), noSample)
+    }
+
+    func testBlockedPermissionsExplainWhereToFixIt() {
+        // A silently denied permission would make the entire watchdog useless, so the
+        // message has to name the exact place to re-enable it.
+        let description = NotificationDeliveryStatus.notAuthorized.userDescription
+        XCTAssertTrue(description.contains("System Settings"), description)
+        XCTAssertFalse(NotificationDeliveryStatus.notAuthorized.isSuccess)
+        XCTAssertTrue(NotificationDeliveryStatus.delivered.isSuccess)
+    }
 }

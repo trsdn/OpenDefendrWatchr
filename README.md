@@ -118,6 +118,37 @@ system: free 1.45 GB (6.1%), compressed 8.57 GB, total 24.00 GB, page size 16384
 severity: Normal
 ```
 
+## Verifying that alerts actually arrive
+
+A watchdog that cannot reach you is worse than no watchdog, because you will trust it. So
+the notification path is testable on demand rather than only during an incident: use
+**"Send Test Notification"** in the menu, or from a terminal:
+
+```bash
+/Applications/OpenDefendrWatchr.app/Contents/MacOS/OpenDefendrWatchr --notify-test
+```
+
+It carries the current live reading — not placeholder text — so a delivered banner also
+confirms sampling works. It reports the real outcome and exits non-zero if delivery was
+refused, instead of claiming success:
+
+```
+$ ./dist/OpenDefendrWatchr.app/Contents/MacOS/OpenDefendrWatchr --notify-test
+Notification delivered. If you did not see a banner, check Notification Centre and
+System Settings ▸ Notifications ▸ OpenDefendrWatchr, and make sure a Focus mode is not
+suppressing it.
+```
+
+If permission was never granted or was revoked, it says so and names the setting to flip.
+A test never counts as a threshold crossing, so it cannot disturb the hysteresis state.
+
+To confirm the banner was genuinely presented and not silently swallowed by a Focus mode:
+
+```bash
+log show --last 5m --predicate 'process == "usernoted"' --style compact \
+  | grep -i opendefendr | grep -i present
+```
+
 ## The log
 
 ```

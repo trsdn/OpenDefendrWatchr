@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Send Test Notification" menu item and a `--notify-test` CLI flag, so alert delivery can
+  be verified before an incident rather than during one. The test carries the current live
+  reading, and never counts as a threshold crossing.
+- `NotificationDeliveryStatus`, reporting the real delivery outcome. A refused or
+  unavailable notification is surfaced with the System Settings location to fix it, instead
+  of failing silently.
+
 ## [0.1.0] - 2026-08-22
 
 Initial release, written in response to the 2026-08-22 `wdavdaemon` memory incident

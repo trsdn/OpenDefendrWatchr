@@ -1,10 +1,41 @@
 import Foundation
 import UserNotifications
 
+/// Outcome of a delivery attempt. Notifications failing silently is the one bug this app
+/// cannot afford — a denied permission would make the whole watchdog useless without any
+/// visible symptom — so the test path reports back what actually happened.
+public enum NotificationDeliveryStatus: Sendable, Equatable {
+    case delivered
+    case notAuthorized
+    case unavailable(String)
+    case failed(String)
+
+    public var isSuccess: Bool { self == .delivered }
+
+    public var userDescription: String {
+        switch self {
+        case .delivered:
+            return "Notification delivered. If you did not see a banner, check Notification Centre and System Settings ▸ Notifications ▸ OpenDefendrWatchr, and make sure a Focus mode is not suppressing it."
+        case .notAuthorized:
+            return "macOS is blocking notifications for OpenDefendrWatchr. Enable them in System Settings ▸ Notifications ▸ OpenDefendrWatchr — otherwise threshold alerts will never reach you."
+        case .unavailable(let reason):
+            return "Notifications are unavailable: \(reason)"
+        case .failed(let message):
+            return "Delivery failed: \(message)"
+        }
+    }
+}
+
 /// Delivers threshold alerts to the user.
 public protocol AlertNotifying: Sendable {
     func requestAuthorization()
     func deliver(_ alert: ThresholdAlert)
+    /// Sends a visible test notification reflecting the current reading, and reports
+    /// whether it could actually be delivered.
+    func deliverTest(
+        sample: MemorySample?,
+        completion: @escaping @Sendable (NotificationDeliveryStatus) -> Void
+    )
 }
 
 /// Builds the user-facing text for an alert. Pure, so wording is covered by tests and
@@ -29,6 +60,24 @@ public enum AlertPresentation {
             text += " Save your work and consider rebooting deliberately."
         }
         return text
+    }
+
+    public static let testTitle = "OpenDefendrWatchr test notification"
+
+    /// The test body deliberately carries the live figures, so the user sees exactly the
+    /// shape of a real alert rather than a content-free "this is a test".
+    public static func testBody(sample: MemorySample?, processName: String) -> String {
+        guard let sample else {
+            return "Alerts are working. No \(processName) reading yet."
+        }
+        guard sample.isProcessRunning else {
+            return "Alerts are working. \(processName) is not running; system free "
+                + "\(ByteFormatting.detailed(sample.system.freeBytes))."
+        }
+        return "Alerts are working. \(processName) is at "
+            + "\(ByteFormatting.detailed(sample.processResidentBytes)); system free "
+            + "\(ByteFormatting.detailed(sample.system.freeBytes)), compressed "
+            + "\(ByteFormatting.detailed(sample.system.compressedBytes))."
     }
 }
 
@@ -71,5 +120,47 @@ public final class UserNotificationAlertNotifier: AlertNotifying {
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    public func deliverTest(
+        sample: MemorySample?,
+        completion: @escaping @Sendable (NotificationDeliveryStatus) -> Void
+    ) {
+        let title = AlertPresentation.testTitle
+        let body = AlertPresentation.testBody(sample: sample, processName: processName)
+
+        guard isBundled else {
+            FileHandle.standardError.write(Data("[test] \(title): \(body)\n".utf8))
+            completion(
+                .unavailable(
+                    "the app is running without a bundle (swift run). Install OpenDefendrWatchr.app and launch it from there."
+                ))
+            return
+        }
+
+        let center = UNUserNotificationCenter.current()
+        // Ask first: a prior denial is silent otherwise, and "no banner appeared" would
+        // leave the user unable to tell a broken app from a blocked permission.
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error {
+                completion(.failed(error.localizedDescription))
+                return
+            }
+            guard granted else {
+                completion(.notAuthorized)
+                return
+            }
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+
+            let request = UNNotificationRequest(
+                identifier: "test-\(UUID().uuidString)", content: content, trigger: nil)
+            center.add(request) { addError in
+                completion(addError.map { .failed($0.localizedDescription) } ?? .delivered)
+            }
+        }
     }
 }

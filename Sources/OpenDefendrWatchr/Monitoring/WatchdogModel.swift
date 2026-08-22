@@ -115,6 +115,16 @@ public final class WatchdogModel: ObservableObject {
         pollTask = nil
     }
 
+    /// Sends a visible test notification using the latest reading, so the alert path can
+    /// be verified before an incident rather than during one.
+    public func sendTestNotification(
+        completion: @escaping @MainActor (NotificationDeliveryStatus) -> Void
+    ) {
+        notifier.deliverTest(sample: currentSample) { status in
+            Task { @MainActor in completion(status) }
+        }
+    }
+
     private func restartPolling() {
         pollTask?.cancel()
         let interval = preferences.pollInterval
