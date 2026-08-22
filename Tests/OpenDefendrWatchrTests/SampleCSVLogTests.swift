@@ -32,7 +32,7 @@ final class SampleCSVLogTests: XCTestCase {
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
 
         let sample = MemorySample(
-            timestamp: Date(timeIntervalSince1970: 1_787_380_804),  // 2026-08-22T06:40:04Z
+            timestamp: Date(timeIntervalSince1970: 1_767_225_600),  // 2026-01-01T00:00:00Z
             process: ProcessMemoryUsage(residentBytes: 20_303_237_939, processCount: 1),
             system: Fixture.jetsamSystem
         )
@@ -43,7 +43,7 @@ final class SampleCSVLogTests: XCTestCase {
         XCTAssertEqual(
             fields.count, SampleCSVLog.header.split(separator: ",").count,
             "row and header must stay aligned")
-        XCTAssertEqual(fields[0], "2026-08-22T06:40:04Z")
+        XCTAssertEqual(fields[0], "2026-01-01T00:00:00Z")
         XCTAssertEqual(fields[1], "wdavdaemon")
         XCTAssertEqual(fields[2], "20303237939")
         XCTAssertEqual(fields[3], "18.91 GB")
