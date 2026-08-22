@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-22
+
+### Fixed
+
+- Lower the SwiftPM manifest to tools version 6.1. The signing broker's runner ships Swift
+  6.1, so a 6.2 manifest failed to build there and no release could be notarised.
+
 ## [0.2.0] - 2026-08-22
 
 ### Added
