@@ -18,6 +18,38 @@ public struct ProcessMemoryUsage: Sendable, Equatable {
     }
 }
 
+/// The kernel's own memory pressure verdict, from `kern.memorystatus_vm_pressure_level`.
+///
+/// This is the signal jetsam itself acts on, which is why it is the one this app trusts.
+/// Raw free pages are *not* a danger signal on macOS: the VM subsystem deliberately keeps
+/// the free list nearly empty, so `free < 5%` held in 99.3% of the samples in a real
+/// 1260-sample log taken during entirely normal operation. Deriving alarm from that number
+/// produces either constant false alarms or, when ANDed with a second condition to suppress
+/// them, silence.
+public enum MemoryPressureLevel: Int, Sendable, Equatable, Comparable, CaseIterable {
+    case normal = 1
+    case warning = 2
+    case critical = 4
+
+    public static func < (lhs: MemoryPressureLevel, rhs: MemoryPressureLevel) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    /// Maps the raw sysctl value. Unknown values are treated as `.normal` rather than
+    /// invented danger — a misread must not manufacture alerts.
+    public init(rawKernelValue: Int32) {
+        self = MemoryPressureLevel(rawValue: Int(rawKernelValue)) ?? .normal
+    }
+
+    public var title: String {
+        switch self {
+        case .normal: return "normal"
+        case .warning: return "warning"
+        case .critical: return "critical"
+        }
+    }
+}
+
 /// System-wide memory state, derived from `host_statistics64` + `hw.memsize`.
 public struct SystemMemoryUsage: Sendable, Equatable {
     public let totalBytes: UInt64
@@ -25,12 +57,21 @@ public struct SystemMemoryUsage: Sendable, Equatable {
     public let compressedBytes: UInt64
     /// Kernel page size in bytes. 16384 on Apple silicon, 4096 on Intel — never hardcode it.
     public let pageSize: UInt64
+    /// The kernel's pressure verdict. This, not `freeFraction`, decides severity.
+    public let pressureLevel: MemoryPressureLevel
 
-    public init(totalBytes: UInt64, freeBytes: UInt64, compressedBytes: UInt64, pageSize: UInt64) {
+    public init(
+        totalBytes: UInt64,
+        freeBytes: UInt64,
+        compressedBytes: UInt64,
+        pageSize: UInt64,
+        pressureLevel: MemoryPressureLevel = .normal
+    ) {
         self.totalBytes = totalBytes
         self.freeBytes = freeBytes
         self.compressedBytes = compressedBytes
         self.pageSize = pageSize
+        self.pressureLevel = pressureLevel
     }
 
     /// Fraction of physical RAM currently free (0...1). Returns 1 when total is unknown.

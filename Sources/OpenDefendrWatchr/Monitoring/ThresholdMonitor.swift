@@ -5,11 +5,19 @@ public struct ThresholdAlert: Sendable, Equatable {
     public let severity: Severity
     public let sample: MemorySample
     public let thresholdBytes: UInt64
+    /// Whether the watched process or the machine itself triggered this.
+    public let cause: AlertCause
 
-    public init(severity: Severity, sample: MemorySample, thresholdBytes: UInt64) {
+    public init(
+        severity: Severity,
+        sample: MemorySample,
+        thresholdBytes: UInt64,
+        cause: AlertCause = .process
+    ) {
         self.severity = severity
         self.sample = sample
         self.thresholdBytes = thresholdBytes
+        self.cause = cause
     }
 }
 
@@ -82,7 +90,7 @@ public struct ThresholdMonitor: Sendable {
             candidateStreak = 1
         }
 
-        rearmIfRecovered(bytes: sample.processResidentBytes)
+        rearmIfRecovered(sample)
 
         // De-escalation is immediate: it never notifies, and pretending the machine is
         // still critical would keep the menu bar lying to the user.
@@ -96,6 +104,8 @@ public struct ThresholdMonitor: Sendable {
         currentSeverity = observed
         guard observed > previous || shouldRefire(observed) else { return nil }
 
+        let cause = evaluator.cause(for: sample, thresholds: thresholds)
+
         switch observed {
         case .normal:
             return nil
@@ -103,13 +113,15 @@ public struct ThresholdMonitor: Sendable {
             guard warningArmed else { return nil }
             warningArmed = false
             return ThresholdAlert(
-                severity: .warning, sample: sample, thresholdBytes: thresholds.warningBytes)
+                severity: .warning, sample: sample, thresholdBytes: thresholds.warningBytes,
+                cause: cause)
         case .critical:
             guard criticalArmed else { return nil }
             criticalArmed = false
             warningArmed = false
             return ThresholdAlert(
-                severity: .critical, sample: sample, thresholdBytes: thresholds.criticalBytes)
+                severity: .critical, sample: sample, thresholdBytes: thresholds.criticalBytes,
+                cause: cause)
         }
     }
 
@@ -123,11 +135,24 @@ public struct ThresholdMonitor: Sendable {
         }
     }
 
-    private mutating func rearmIfRecovered(bytes: UInt64) {
-        if Double(bytes) < Double(thresholds.warningBytes) * policy.releaseFraction {
+    /// Re-arms a level only once *both* drivers have receded.
+    ///
+    /// The process condition alone is not sufficient: when an alert is driven by system
+    /// pressure the watched process may sit at a few megabytes, which would satisfy the
+    /// byte rule on every single tick and turn a sustained pressure episode into a
+    /// notification storm — the exact failure this monitor exists to prevent.
+    private mutating func rearmIfRecovered(_ sample: MemorySample) {
+        let bytes = sample.processResidentBytes
+        let system = evaluator.systemSeverity(sample.system)
+
+        if Double(bytes) < Double(thresholds.warningBytes) * policy.releaseFraction,
+            system < .warning
+        {
             warningArmed = true
         }
-        if Double(bytes) < Double(thresholds.criticalBytes) * policy.releaseFraction {
+        if Double(bytes) < Double(thresholds.criticalBytes) * policy.releaseFraction,
+            system < .critical
+        {
             criticalArmed = true
         }
     }

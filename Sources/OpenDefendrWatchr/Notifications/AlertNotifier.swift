@@ -42,20 +42,44 @@ public protocol AlertNotifying: Sendable {
 /// cannot silently regress into something useless like "Warning: threshold crossed".
 public enum AlertPresentation {
     public static func title(for alert: ThresholdAlert, processName: String) -> String {
-        switch alert.severity {
-        case .critical: return "\(processName) memory critical"
-        case .warning: return "\(processName) memory high"
-        case .normal: return "\(processName) memory normal"
+        switch alert.cause {
+        case .systemPressure:
+            switch alert.severity {
+            case .critical: return "System memory critical"
+            case .warning: return "System memory under pressure"
+            case .normal: return "System memory normal"
+            }
+        case .process:
+            switch alert.severity {
+            case .critical: return "\(processName) memory critical"
+            case .warning: return "\(processName) memory high"
+            case .normal: return "\(processName) memory normal"
+            }
         }
     }
 
     public static func body(for alert: ThresholdAlert, processName: String) -> String {
-        let used = ByteFormatting.detailed(alert.sample.processResidentBytes)
-        let limit = ByteFormatting.detailed(alert.thresholdBytes)
         let free = ByteFormatting.detailed(alert.sample.system.freeBytes)
         let compressed = ByteFormatting.detailed(alert.sample.system.compressedBytes)
-        var text = "\(processName) is using \(used) (threshold \(limit)). "
-        text += "System free \(free), compressed \(compressed)."
+
+        var text: String
+        switch alert.cause {
+        case .systemPressure:
+            // Name the watched process explicitly even though it is innocent, so the user
+            // does not waste the next ten minutes suspecting Defender.
+            text = "The kernel reports memory pressure \(alert.sample.system.pressureLevel.title). "
+            if alert.sample.isProcessRunning {
+                let used = ByteFormatting.detailed(alert.sample.processResidentBytes)
+                text += "\(processName) is not the cause (\(used)). "
+            }
+            text += "System free \(free), compressed \(compressed)."
+        case .process:
+            let used = ByteFormatting.detailed(alert.sample.processResidentBytes)
+            let limit = ByteFormatting.detailed(alert.thresholdBytes)
+            text = "\(processName) is using \(used) (threshold \(limit)). "
+            text += "System free \(free), compressed \(compressed)."
+        }
+
         if alert.severity == .critical {
             text += " Save your work and consider rebooting deliberately."
         }

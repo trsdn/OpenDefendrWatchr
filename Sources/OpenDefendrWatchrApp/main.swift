@@ -26,6 +26,7 @@ if CommandLine.arguments.contains("--probe") {
                 + "compressed \(ByteFormatting.detailed(system.compressedBytes)), "
                 + "total \(ByteFormatting.detailed(system.totalBytes)), "
                 + "page size \(system.pageSize)")
+        print("kernel memory pressure: \(system.pressureLevel.title)")
         print("severity: \(severity.title)")
         exit(0)
     } catch {

@@ -43,8 +43,19 @@ public struct HostSystemMemoryReader: SystemMemoryReading {
             totalBytes: Self.physicalMemoryBytes(),
             freeBytes: UInt64(stats.free_count) * bytesPerPage,
             compressedBytes: UInt64(stats.compressor_page_count) * bytesPerPage,
-            pageSize: bytesPerPage
+            pageSize: bytesPerPage,
+            pressureLevel: Self.pressureLevel()
         )
+    }
+
+    /// The kernel's pressure verdict. Absent (or unreadable) means "no reason to worry":
+    /// a failed sysctl must not fabricate an alert.
+    static func pressureLevel() -> MemoryPressureLevel {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &value, &size, nil, 0) == 0
+        else { return .normal }
+        return MemoryPressureLevel(rawKernelValue: value)
     }
 
     private static func physicalMemoryBytes() -> UInt64 {

@@ -94,6 +94,14 @@ public final class WatchdogModel: ObservableObject {
             "System: \(ByteFormatting.detailed(system.freeBytes)) free (\(ByteFormatting.percent(system.freeFraction))), \(ByteFormatting.detailed(system.compressedBytes)) compressed of \(ByteFormatting.detailed(system.totalBytes))"
     }
 
+    /// Surfaced separately from `systemLine` because this is the figure severity is
+    /// actually derived from; burying it in the byte counts would repeat the mistake of
+    /// letting the raw free-page number look like the important one.
+    public var pressureLine: String {
+        guard let sample = currentSample else { return "Memory pressure: —" }
+        return "Memory pressure: \(sample.system.pressureLevel.title)"
+    }
+
     public var peakLine: String {
         peakBytes == 0 ? "Peak: —" : "Peak this session: \(ByteFormatting.detailed(peakBytes))"
     }

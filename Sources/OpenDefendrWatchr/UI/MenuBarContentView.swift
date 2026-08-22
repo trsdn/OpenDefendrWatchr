@@ -13,6 +13,7 @@ public struct MenuBarContentView: View {
     public var body: some View {
         Text(model.statusLine)
         Text(model.systemLine)
+        Text(model.pressureLine)
         Text(model.peakLine)
         if let lastUpdate = model.lastUpdate {
             Text("Updated \(lastUpdate.formatted(date: .omitted, time: .standard))")

@@ -32,37 +32,61 @@ public enum Severity: Int, Sendable, Comparable, CaseIterable {
 /// Turns a sample into a severity, taking both the process figure and real system
 /// pressure into account.
 ///
-/// The 2026-08-22 incident was not dangerous because one process was large in the
-/// abstract — it was dangerous because free memory had collapsed to ~139 MB while the
-/// compressor held ~9.4 GB. So a process above the warning threshold is escalated to
-/// critical once the machine itself is starving, even if the process has not yet reached
-/// the critical byte threshold.
+/// Two rules, and the second one exists because the first was not enough:
+///
+/// 1. The watched process crossing a byte threshold is a warning, and is escalated to
+///    critical once the machine itself is under pressure.
+/// 2. **The machine being under pressure is an alert in its own right**, whatever the
+///    watched process is doing. On 2026-08-22 the machine took a WindowServer watchdog
+///    panic while `wdavdaemon` sat at 56 MB: anchoring severity to one process meant the
+///    log recorded `normal` for all 1260 samples up to 70 seconds before the panic.
+///
+/// The pressure verdict comes from the kernel (`MemoryPressureLevel`), not from a
+/// hand-rolled fraction of free pages — see that type for why free pages are worthless here.
 public struct SeverityEvaluator: Sendable, Equatable {
-    /// Free RAM fraction under which the machine is considered starving.
-    public var starvingFreeFraction: Double
-    /// Compressor fraction over which the machine is considered starving.
-    public var starvingCompressedFraction: Double
+    public init() {}
 
-    public init(starvingFreeFraction: Double = 0.05, starvingCompressedFraction: Double = 0.30) {
-        self.starvingFreeFraction = starvingFreeFraction
-        self.starvingCompressedFraction = starvingCompressedFraction
+    /// Severity implied by the machine's own state, ignoring the watched process.
+    public func systemSeverity(_ system: SystemMemoryUsage) -> Severity {
+        switch system.pressureLevel {
+        case .normal: return .normal
+        case .warning: return .warning
+        case .critical: return .critical
+        }
     }
 
-    public func systemIsStarving(_ system: SystemMemoryUsage) -> Bool {
-        system.freeFraction < starvingFreeFraction
-            && system.compressedFraction > starvingCompressedFraction
-    }
-
-    public func severity(for sample: MemorySample, thresholds: Thresholds) -> Severity {
+    /// Severity implied by the watched process alone.
+    public func processSeverity(for sample: MemorySample, thresholds: Thresholds) -> Severity {
         guard sample.isProcessRunning else { return .normal }
         let bytes = sample.processResidentBytes
 
         if bytes >= thresholds.criticalBytes { return .critical }
         if bytes >= thresholds.warningBytes {
-            return systemIsStarving(sample.system) ? .critical : .warning
+            // A large process on an already-pressured machine is the 06:40 scenario.
+            return systemSeverity(sample.system) >= .warning ? .critical : .warning
         }
         return .normal
     }
+
+    public func severity(for sample: MemorySample, thresholds: Thresholds) -> Severity {
+        max(processSeverity(for: sample, thresholds: thresholds), systemSeverity(sample.system))
+    }
+
+    /// What is actually driving the current severity — the process, or the machine.
+    /// Alert wording depends on this: telling the user "wdavdaemon is using 56 MB" while
+    /// the machine is dying would be worse than saying nothing.
+    public func cause(for sample: MemorySample, thresholds: Thresholds) -> AlertCause {
+        processSeverity(for: sample, thresholds: thresholds) >= systemSeverity(sample.system)
+            ? .process : .systemPressure
+    }
+}
+
+/// Why an alert fired.
+public enum AlertCause: Sendable, Equatable {
+    /// The watched process crossed a byte threshold.
+    case process
+    /// The machine as a whole is under memory pressure.
+    case systemPressure
 }
 
 /// User-configurable byte thresholds. Defaults are tuned for a 24 GB machine.
