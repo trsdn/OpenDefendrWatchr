@@ -22,16 +22,40 @@ story:
 The goal is not to fix Defender. The goal is to never be surprised again: warn early
 enough to save work and reboot deliberately, and collect hard evidence for an IT ticket.
 
+### The second failure mode
+
+Later the same day the machine took a **kernel panic** — and it had nothing to do with
+memory. The panic string was `userspace watchdog timeout: no successful checkins from
+WindowServer (2 induced crashes) in 120 seconds`, and the report explicitly records
+`"memoryPressure": false`, `pagesWanted: 0`. `wdavdaemon` was a harmless 55.69 MB.
+
+The stackshot showed why: WindowServer's main thread was blocked in the kernel's
+`com.apple.iokit.EndpointSecurity` extension — along with **47 threads across ~40
+processes**, including `tccd`, `opendirectoryd`, `authd`, `coreaudiod` and `watchdogd`
+itself. The machine's only Endpoint Security client is Microsoft Defender's
+`com.microsoft.wdav.epsext`, which had been logging IPC watchdog timeouts at roughly eight
+per second for the preceding hour. Every process that touched a file blocked; WindowServer
+was killed, restarted, blocked again, and the kernel gave up.
+
+So the same product can take the machine down two entirely different ways: by leaking
+memory, and by stalling Endpoint Security. **The first version of this app was blind to the
+second** — it reported `normal` for all 1260 samples up to 70 seconds before the panic.
+That is why it now measures filesystem latency too (see below).
+
 ## What it does
 
 - Polls `wdavdaemon` resident memory on a configurable interval (default 30s).
-- Tracks real system memory pressure (free pages + compressor) alongside it, so a big
-  process is only called *critical* when the machine is genuinely starving.
+- Reads the kernel's own memory pressure verdict
+  (`kern.memorystatus_vm_pressure_level`) — the value jetsam acts on.
+- **Measures Endpoint Security stalls** by timing `open()`/`close()` on a small warm file.
+  Every open is authorised by the ES layer, so this latency is a direct measurement of an
+  ES client blocking. Healthy on this machine: median **8.5 µs**. A stall pushes it into
+  seconds.
 - Shows the current figure compactly in the menu bar (`18.9G`) with a shield glyph whose
   **shape** changes with severity — normal / warning / critical — so it stays legible in
   both light and dark menu bars.
 - Notifies **once** per threshold crossing, with debounce and hysteresis. It re-arms only
-  after usage drops meaningfully back below the threshold.
+  after *every* driver has receded.
 - Appends every sample to a rotating CSV log — the evidence for the ticket.
 - Handles "Defender isn't running" as its own state (`—`) instead of pretending it is 0 B.
 
@@ -42,9 +66,17 @@ enough to save work and reboot deliberately, and collect hard evidence for an IT
 | Warning | 8 GB | `wdavdaemon` is far past normal (~100 MB) and worth watching. |
 | Critical | 12 GB | Save your work; consider a deliberate reboot. |
 
-Both are editable in Preferences and persisted. A warning-level process is escalated to
-critical when free RAM drops below 5% *and* the compressor exceeds 30% of RAM — the
-combination that preceded the jetsam event.
+Both are editable in Preferences and persisted.
+
+Severity is the **worst of three independent verdicts**: the watched process, kernel memory
+pressure, and filesystem stall. Anchoring it to the process alone is what made the app miss
+the panic. Filesystem latency warns at 25 ms and goes critical at 250 ms — roughly three
+and four orders of magnitude above the measured healthy baseline, so ordinary scheduling
+jitter cannot reach it.
+
+> **Not derived from free pages.** macOS deliberately keeps the free list near-empty. In a
+> real 1260-sample log taken during entirely normal operation, `free < 5%` held **99.3%** of
+> the time. A rule built on that number is a constant, not a signal.
 
 ## The tamper protection limitation (read this)
 
@@ -180,13 +212,14 @@ Reveal it from the menu ("Reveal Log in Finder"). One row per poll, rotated at 4
 three generations kept:
 
 ```csv
-timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,severity
-2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,critical
+timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,pressure_level,stall_us,severity
+2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,critical,11.2,critical
 ```
 
 Raw byte columns for graphing, human-readable columns for pasting into a bug report. When
 Defender is not running the byte column is empty rather than `0`, so a gap plots as a gap
-instead of a fake drop to zero.
+instead of a fake drop to zero. `stall_us` is the median `open()` latency in microseconds;
+it should sit in single digits, and a jump into the thousands is an Endpoint Security stall.
 
 ## How the memory reading works
 
@@ -199,6 +232,22 @@ instead of a fake drop to zero.
 - System memory comes from `host_statistics64(HOST_VM_INFO64)`, with the page size queried
   via `host_page_size` — it is 16384 on Apple silicon and 4096 on Intel, and is never
   hardcoded.
+- Memory pressure comes from the `kern.memorystatus_vm_pressure_level` sysctl.
+
+## How the stall detection works
+
+The probe opens and closes a 64-byte file it owns, 25 times, and takes the **median**
+duration. The file stays in the page cache, so disk speed is not a variable; what remains is
+the kernel-side Endpoint Security authorisation round-trip.
+
+This is deliberately vendor-neutral. It would have been possible to count Defender's
+`epsext` IPC watchdog timeouts out of the unified log, but that costs ~2 s per query, and it
+depends on a private log format that Microsoft can change at any time. Measuring the
+*symptom* is cheaper (a probe costs ~0.2 ms), more honest, and catches any ES client
+stalling — not just this one.
+
+A probe that cannot run reports **no data**, never a fast reading. Absence of evidence must
+not silently disarm the alarm.
 
 ## License
 

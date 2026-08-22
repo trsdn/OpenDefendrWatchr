@@ -21,7 +21,8 @@ Sources/OpenDefendrWatchr/                # Library target: OpenDefendrWatchrKit
   Formatting/ByteFormatting.swift         # Deterministic compact/detailed byte strings
   Sampling/MemorySampling.swift           # Protocols + DefenderMemorySampler
   Sampling/ProcessMemoryReader.swift      # libproc enumeration, ps parsing, composite reader
-  Sampling/HostSystemMemoryReader.swift   # host_statistics64 + hw.memsize
+  Sampling/HostSystemMemoryReader.swift   # host_statistics64 + hw.memsize + pressure level
+  Sampling/StallProbe.swift               # Endpoint Security stall detection via open() latency
   Sampling/CommandRunner.swift            # CommandRunning protocol + Process implementation
   Monitoring/ThresholdMonitor.swift       # Debounce + hysteresis state machine
   Monitoring/WatchdogModel.swift          # @MainActor observable app state, poll loop
@@ -61,6 +62,17 @@ These are product decisions, not implementation details. Do not "improve" them a
 6. **"Not running" is a distinct state**, never `0 B`, in both the UI and the CSV log.
 7. **Match the executable name exactly.** `wdavdaemon_enterprise` and
    `wdavdaemon_unprivileged` are different processes and must not be summed into the figure.
+8. **Never derive danger from raw free pages.** macOS keeps the free list near-empty by
+   design; `free < 5%` held in 99.3% of a real 1260-sample log taken during healthy
+   operation. Trust `kern.memorystatus_vm_pressure_level`, the value jetsam itself acts on.
+9. **Severity is the worst of three independent verdicts** — watched process, kernel memory
+   pressure, and filesystem stall. The machine can die while `wdavdaemon` is innocent: a
+   WindowServer watchdog panic happened with the daemon at 56 MB and the kernel reporting
+   `memoryPressure: false`. Anchoring severity to any single input reintroduces that
+   blindness.
+10. **A missing measurement is not a healthy one.** An unreadable sysctl or a probe that
+    could not run must degrade to `.normal` without fabricating an alert — and must not be
+    presented as a good reading either.
 
 ## Conventions
 
@@ -91,7 +103,11 @@ These are product decisions, not implementation details. Do not "improve" them a
 - Fixtures in `Fixture.swift` mirror the real incident (24 GB RAM, 16 KB pages,
   8491 free pages, 571,985 compressor pages, 18.91 GB process). Use them.
 - Test behaviour that could plausibly break: hysteresis, severity escalation, `ps` parsing,
-  byte formatting, CSV shape, threshold clamping. Do not add tests that assert trivialities.
+  byte formatting, CSV shape, threshold clamping, stall detection. Do not add tests that
+  assert trivialities.
+- Fixtures must stay faithful to the incidents they claim to model. `prePanicSystem` carries
+  `pressure: .normal` because the panic report says `"memoryPressure": false` — softening
+  that to make a memory rule look effective would hide the app's real blind spot.
 
 ### Configuration and secrets
 

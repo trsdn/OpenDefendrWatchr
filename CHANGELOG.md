@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `StallProbe`, which times `open()`/`close()` cycles to measure how long trivial
+  filesystem work is taking. Every `open()` is authorised by the kernel's Endpoint Security
+  layer, so this latency is a direct measurement of an ES client stalling. Surfaced in the
+  menu, in `--probe`, and as a new `stall_us` CSV column.
+- `AlertCause.systemStall`, with wording that names Endpoint Security and states plainly
+  that memory is not the fault, so the user does not spend the incident checking the wrong
+  thing.
+- Kernel memory pressure (`kern.memorystatus_vm_pressure_level`) as a `pressure_level` CSV
+  column and a menu line.
+
+### Changed
+
+- Severity is now the worst of three independent verdicts — the watched process, kernel
+  memory pressure, and filesystem stall — instead of being anchored to the watched process.
+  A machine can be dying while `wdavdaemon` is innocent, and previously the app reported
+  `normal` throughout exactly that situation.
+- Threshold re-arming requires *every* driver to recede, not just the byte figure. Under a
+  system-driven alert the watched process is small, which would otherwise satisfy the byte
+  rule on every tick and turn one incident into a notification storm.
+
+### Removed
+
+- The `free < 5% AND compressed > 30%` starvation heuristic. Measured against a real
+  1260-sample log it held in 99.3% of samples taken during entirely normal operation: macOS
+  deliberately keeps the free list near-empty, so raw free pages carry no information about
+  danger.
+
 ## [0.2.1] - 2026-08-22
 
 ### Fixed
