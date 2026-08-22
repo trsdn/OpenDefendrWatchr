@@ -5,18 +5,18 @@ runaway memory growth and warns you **before** the machine dies.
 
 ## Why this exists
 
-On 2026-08-22 a Mac mini M4 Pro (`Mac16,11`, 24 GB RAM, macOS 26.6.2) became unusable.
-The system logs tell the whole story:
+An Apple silicon Mac with 24 GB of RAM became unusable. The system logs tell the whole
+story:
 
-- `JetsamEvent-2026-08-22-064004.ips` fired at 06:40. At that instant free memory was
+- A `JetsamEvent` report fired in the early morning. At that instant free memory was
   **8491 pages of 16 KB (~139 MB)**, the compressor held **571,985 pages (~9.4 GB)**, and
   the single largest process was **`wdavdaemon` at 18.91 GB resident** (1,154,000+ `rpages`).
-  The runners-up were trivial by comparison: Teams WebView Helper at 1.41 GB and
+  The runners-up were trivial by comparison: a browser helper at 1.41 GB and
   WindowServer at 1.13 GB.
 - Immediately afterwards `bluetoothd` began crashing with `EXC_CRASH`/`SIGABRT` every
-  3–20 minutes — 24 crash reports between 06:50 and 09:49, collateral damage from memory
-  starvation.
-- The machine was force-restarted at 09:53. There is **no kernel panic report**: this was
+  3–20 minutes — two dozen crash reports over the following three hours, collateral damage
+  from memory starvation.
+- The machine had to be force-restarted. There is **no kernel panic report**: this was
   memory starvation and unresponsiveness, not a panic.
 
 The goal is not to fix Defender. The goal is to never be surprised again: warn early
@@ -53,7 +53,6 @@ On the affected machine:
 ```
 mdatp health --field tamper_protection        → "block"
 mdatp health --field real_time_protection_enabled → true
-Defender product version                      → 101.26072.0015
 ```
 
 With tamper protection in `block` mode, **Defender actively prevents its own processes
@@ -92,7 +91,7 @@ root helper. Reasons:
 
 ## Requirements
 
-- macOS 14 or later (built and verified on macOS 26.6.2, Apple silicon)
+- macOS 14 or later (developed and verified on Apple silicon)
 - Swift 6.1 toolchain or newer (Xcode command line tools). The manifest targets 6.1
   because that is what the signing broker's runner provides.
 
@@ -182,7 +181,7 @@ three generations kept:
 
 ```csv
 timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,severity
-2026-08-22T06:40:04Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,critical
+2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,critical
 ```
 
 Raw byte columns for graphing, human-readable columns for pasting into a bug report. When
