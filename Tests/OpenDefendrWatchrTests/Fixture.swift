@@ -12,26 +12,28 @@ enum Fixture {
     static func system(
         freeBytes: UInt64,
         compressedBytes: UInt64,
-        pressure: MemoryPressureLevel = .normal
+        available: Double? = 0.46,
+        kernelRaw: MemoryPressureLevel = .warning
     ) -> SystemMemoryUsage {
         SystemMemoryUsage(
             totalBytes: totalRAM,
             freeBytes: freeBytes,
             compressedBytes: compressedBytes,
             pageSize: pageSize,
-            pressureLevel: pressure
+            availableFraction: available,
+            kernelPressureLevel: kernelRaw
         )
     }
 
     /// A comfortable machine: plenty free, compressor mostly idle.
-    static let healthySystem = system(freeBytes: 8 * gb, compressedBytes: 1 * gb)
+    static let healthySystem = system(freeBytes: 8 * gb, compressedBytes: 1 * gb, available: 0.46)
 
     /// The state captured in the morning JetsamEvent: 8491 free pages of 16 KB (~139 MB)
     /// and 571985 compressor pages (~9.4 GB), with the kernel screaming.
     static let jetsamSystem = system(
         freeBytes: 8491 * pageSize,
         compressedBytes: 571_985 * pageSize,
-        pressure: .critical
+        available: 0.03
     )
 
     /// The machine's *ordinary* idle state, taken from a real 1260-sample log.
@@ -42,7 +44,7 @@ enum Fixture {
     static let ordinaryBusySystem = system(
         freeBytes: 103_792_640,
         compressedBytes: 10_039_394_304,
-        pressure: .normal
+        available: 0.46
     )
 
     /// The evening of 2026-08-22, minutes before a WindowServer watchdog kernel panic.
@@ -54,14 +56,14 @@ enum Fixture {
     static let prePanicSystem = system(
         freeBytes: 6347 * pageSize,
         compressedBytes: 590_949 * pageSize,
-        pressure: .normal
+        available: 0.46
     )
 
     /// A machine the kernel itself has flagged, as in the morning jetsam event.
     static let pressuredSystem = system(
         freeBytes: 8491 * pageSize,
         compressedBytes: 571_985 * pageSize,
-        pressure: .critical
+        available: 0.03
     )
 
     /// Filesystem latency measured on a healthy machine with Defender's ES extension

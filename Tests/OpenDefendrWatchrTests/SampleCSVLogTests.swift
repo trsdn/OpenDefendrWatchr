@@ -50,7 +50,11 @@ final class SampleCSVLogTests: XCTestCase {
         XCTAssertEqual(fields[6], String(Fixture.jetsamSystem.freeBytes))
         XCTAssertEqual(fields[7], String(Fixture.jetsamSystem.compressedBytes))
         XCTAssertEqual(fields[8], "16384")
-        XCTAssertEqual(fields[9], "critical")
+        XCTAssertEqual(fields[9], "3", "available percentage, the figure severity derives from")
+        XCTAssertEqual(fields[10], "critical")
+        XCTAssertEqual(
+            fields[11], "warning",
+            "the raw latched dispatch level is recorded as context, not as the verdict")
         XCTAssertFalse(row.contains("\""), "no quoting needed keeps the CSV trivially parseable")
     }
 

@@ -16,8 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AlertCause.systemStall`, with wording that names Endpoint Security and states plainly
   that memory is not the fault, so the user does not spend the incident checking the wrong
   thing.
-- Kernel memory pressure (`kern.memorystatus_vm_pressure_level`) as a `pressure_level` CSV
-  column and a menu line.
+- Memory pressure derived from `kern.memorystatus_level`, as an `available_pct` and
+  `pressure_level` CSV column and a menu line. Warning at 20% available, critical at 10%.
+- `kernel_pressure_raw` CSV column recording `kern.memorystatus_vm_pressure_level` as
+  context. It is deliberately *not* used for alarm: measured on a healthy machine it
+  latched at `warning` for minutes while 46% of memory was available, so driving alerts
+  from it would park the app in a permanent warning state.
 
 ### Changed
 

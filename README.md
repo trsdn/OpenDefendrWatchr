@@ -45,8 +45,8 @@ That is why it now measures filesystem latency too (see below).
 ## What it does
 
 - Polls `wdavdaemon` resident memory on a configurable interval (default 30s).
-- Reads the kernel's own memory pressure verdict
-  (`kern.memorystatus_vm_pressure_level`) — the value jetsam acts on.
+- Reads how much memory jetsam considers available (`kern.memorystatus_level`) and warns
+  at 20%, critical at 10%.
 - **Measures Endpoint Security stalls** by timing `open()`/`close()` on a small warm file.
   Every open is authorised by the ES layer, so this latency is a direct measurement of an
   ES client blocking. Healthy on this machine: median **8.5 µs**. A stall pushes it into
@@ -74,9 +74,12 @@ the panic. Filesystem latency warns at 25 ms and goes critical at 250 ms — rou
 and four orders of magnitude above the measured healthy baseline, so ordinary scheduling
 jitter cannot reach it.
 
-> **Not derived from free pages.** macOS deliberately keeps the free list near-empty. In a
-> real 1260-sample log taken during entirely normal operation, `free < 5%` held **99.3%** of
-> the time. A rule built on that number is a constant, not a signal.
+> **Two numbers that look right and are not.** macOS deliberately keeps the free list
+> near-empty: in a real 1260-sample log from entirely normal operation, `free < 5%` held
+> **99.3%** of the time. And `kern.memorystatus_vm_pressure_level`, the obvious candidate,
+> *latches* — measured here it reported `warning` continuously while
+> `kern.memorystatus_level` reported **46% available**. Both are constants dressed as
+> signals. The app logs the raw dispatch level as evidence but alarms on the percentage.
 
 ## The tamper protection limitation (read this)
 
@@ -212,8 +215,8 @@ Reveal it from the menu ("Reveal Log in Finder"). One row per poll, rotated at 4
 three generations kept:
 
 ```csv
-timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,pressure_level,stall_us,severity
-2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,critical,11.2,critical
+timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,available_pct,pressure_level,kernel_pressure_raw,stall_us,severity
+2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,3,critical,critical,11.2,critical
 ```
 
 Raw byte columns for graphing, human-readable columns for pasting into a bug report. When
@@ -232,7 +235,9 @@ it should sit in single digits, and a jump into the thousands is an Endpoint Sec
 - System memory comes from `host_statistics64(HOST_VM_INFO64)`, with the page size queried
   via `host_page_size` — it is 16384 on Apple silicon and 4096 on Intel, and is never
   hardcoded.
-- Memory pressure comes from the `kern.memorystatus_vm_pressure_level` sysctl.
+- Memory pressure comes from `kern.memorystatus_level`. The raw
+  `kern.memorystatus_vm_pressure_level` is logged alongside it for evidence, but never used
+  to decide severity.
 
 ## How the stall detection works
 

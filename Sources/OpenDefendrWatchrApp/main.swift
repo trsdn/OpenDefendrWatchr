@@ -26,7 +26,10 @@ if CommandLine.arguments.contains("--probe") {
                 + "compressed \(ByteFormatting.detailed(system.compressedBytes)), "
                 + "total \(ByteFormatting.detailed(system.totalBytes)), "
                 + "page size \(system.pageSize)")
-        print("kernel memory pressure: \(system.pressureLevel.title)")
+        print(
+            "memory pressure: \(system.pressureLevel.title) "
+                + "(available \(system.availableFraction.map { "\(Int($0 * 100))%" } ?? "unknown"), "
+                + "raw dispatch level \(system.kernelPressureLevel.title))")
         if let stall = sample.stall {
             print(
                 "file latency: median \(AlertPresentation.duration(stall.medianSeconds)), "

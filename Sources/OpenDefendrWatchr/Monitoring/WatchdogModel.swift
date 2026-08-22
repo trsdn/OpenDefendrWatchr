@@ -99,7 +99,11 @@ public final class WatchdogModel: ObservableObject {
     /// letting the raw free-page number look like the important one.
     public var pressureLine: String {
         guard let sample = currentSample else { return "Memory pressure: —" }
-        return "Memory pressure: \(sample.system.pressureLevel.title)"
+        guard let available = sample.system.availableFraction else {
+            return "Memory pressure: unknown"
+        }
+        return "Memory pressure: \(sample.system.pressureLevel.title) "
+            + "(\(Int(available * 100))% available)"
     }
 
     /// Filesystem latency, the signal that catches an Endpoint Security stall — a failure

@@ -18,14 +18,21 @@ public struct ProcessMemoryUsage: Sendable, Equatable {
     }
 }
 
-/// The kernel's own memory pressure verdict, from `kern.memorystatus_vm_pressure_level`.
+/// The kernel's own memory pressure verdict.
 ///
-/// This is the signal jetsam itself acts on, which is why it is the one this app trusts.
 /// Raw free pages are *not* a danger signal on macOS: the VM subsystem deliberately keeps
 /// the free list nearly empty, so `free < 5%` held in 99.3% of the samples in a real
-/// 1260-sample log taken during entirely normal operation. Deriving alarm from that number
-/// produces either constant false alarms or, when ANDed with a second condition to suppress
-/// them, silence.
+/// 1260-sample log taken during entirely normal operation.
+///
+/// `kern.memorystatus_vm_pressure_level` is not usable either, despite being the obvious
+/// candidate. It is a *notification dispatch* level and latches: measured on a healthy
+/// machine it reported `warning` continuously for minutes while `kern.memorystatus_level`
+/// simultaneously reported 46% memory available. Trusting it would put the app in a
+/// permanent warning state, which trains the user to ignore it — the same
+/// constant-masquerading-as-a-signal mistake as the free-page rule.
+///
+/// So this level is derived from `kern.memorystatus_level`, the quantitative percentage
+/// jetsam itself acts on. See `SystemMemoryUsage.pressureLevel`.
 public enum MemoryPressureLevel: Int, Sendable, Equatable, Comparable, CaseIterable {
     case normal = 1
     case warning = 2
@@ -52,26 +59,46 @@ public enum MemoryPressureLevel: Int, Sendable, Equatable, Comparable, CaseItera
 
 /// System-wide memory state, derived from `host_statistics64` + `hw.memsize`.
 public struct SystemMemoryUsage: Sendable, Equatable {
+    /// At or below this fraction available, the machine is in trouble.
+    public static let criticalAvailableFraction = 0.10
+    /// At or below this fraction available, it is worth telling the user.
+    public static let warningAvailableFraction = 0.20
+
     public let totalBytes: UInt64
     public let freeBytes: UInt64
     public let compressedBytes: UInt64
     /// Kernel page size in bytes. 16384 on Apple silicon, 4096 on Intel — never hardcode it.
     public let pageSize: UInt64
-    /// The kernel's pressure verdict. This, not `freeFraction`, decides severity.
-    public let pressureLevel: MemoryPressureLevel
+    /// `kern.memorystatus_level / 100` — the share of memory jetsam considers available.
+    /// `nil` when the sysctl could not be read; that is "unknown", never "fine".
+    public let availableFraction: Double?
+    /// Raw `kern.memorystatus_vm_pressure_level`, recorded for the incident log only.
+    /// Deliberately not used for alarm — see `MemoryPressureLevel` for why it latches.
+    public let kernelPressureLevel: MemoryPressureLevel
 
     public init(
         totalBytes: UInt64,
         freeBytes: UInt64,
         compressedBytes: UInt64,
         pageSize: UInt64,
-        pressureLevel: MemoryPressureLevel = .normal
+        availableFraction: Double? = nil,
+        kernelPressureLevel: MemoryPressureLevel = .normal
     ) {
         self.totalBytes = totalBytes
         self.freeBytes = freeBytes
         self.compressedBytes = compressedBytes
         self.pageSize = pageSize
-        self.pressureLevel = pressureLevel
+        self.availableFraction = availableFraction
+        self.kernelPressureLevel = kernelPressureLevel
+    }
+
+    /// The verdict severity is derived from. An unreadable measurement yields `.normal`:
+    /// a failed sysctl must not manufacture an alert.
+    public var pressureLevel: MemoryPressureLevel {
+        guard let availableFraction else { return .normal }
+        if availableFraction <= Self.criticalAvailableFraction { return .critical }
+        if availableFraction <= Self.warningAvailableFraction { return .warning }
+        return .normal
     }
 
     /// Fraction of physical RAM currently free (0...1). Returns 1 when total is unknown.

@@ -44,13 +44,25 @@ public struct HostSystemMemoryReader: SystemMemoryReading {
             freeBytes: UInt64(stats.free_count) * bytesPerPage,
             compressedBytes: UInt64(stats.compressor_page_count) * bytesPerPage,
             pageSize: bytesPerPage,
-            pressureLevel: Self.pressureLevel()
+            availableFraction: Self.availableFraction(),
+            kernelPressureLevel: Self.kernelPressureLevel()
         )
     }
 
-    /// The kernel's pressure verdict. Absent (or unreadable) means "no reason to worry":
-    /// a failed sysctl must not fabricate an alert.
-    static func pressureLevel() -> MemoryPressureLevel {
+    /// `kern.memorystatus_level`, the percentage of memory jetsam considers available.
+    /// Returns `nil` when unreadable so the caller can tell "unknown" from "healthy".
+    static func availableFraction() -> Double? {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_level", &value, &size, nil, 0) == 0,
+            (0...100).contains(value)
+        else { return nil }
+        return Double(value) / 100
+    }
+
+    /// The raw dispatch level, logged as context only. It latches at `warning` on a
+    /// perfectly healthy machine, so it must not drive alarm.
+    static func kernelPressureLevel() -> MemoryPressureLevel {
         var value: Int32 = 0
         var size = MemoryLayout<Int32>.size
         guard sysctlbyname("kern.memorystatus_vm_pressure_level", &value, &size, nil, 0) == 0

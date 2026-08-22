@@ -64,7 +64,9 @@ These are product decisions, not implementation details. Do not "improve" them a
    `wdavdaemon_unprivileged` are different processes and must not be summed into the figure.
 8. **Never derive danger from raw free pages.** macOS keeps the free list near-empty by
    design; `free < 5%` held in 99.3% of a real 1260-sample log taken during healthy
-   operation. Trust `kern.memorystatus_vm_pressure_level`, the value jetsam itself acts on.
+   operation. `kern.memorystatus_vm_pressure_level` is no better: it latches, and was
+   measured reporting `warning` continuously while 46% of memory was available. Derive
+   pressure from `kern.memorystatus_level` and log the dispatch level as context only.
 9. **Severity is the worst of three independent verdicts** — watched process, kernel memory
    pressure, and filesystem stall. The machine can die while `wdavdaemon` is innocent: a
    WindowServer watchdog panic happened with the daemon at 56 MB and the kernel reporting

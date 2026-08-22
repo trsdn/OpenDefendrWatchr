@@ -44,6 +44,28 @@ final class SeverityEvaluatorTests: XCTestCase {
         XCTAssertEqual(evaluator.cause(for: withStall, thresholds: thresholds), .systemStall)
     }
 
+    func testTheLatchedKernelDispatchLevelDoesNotDriveAlarm() {
+        // Measured on a healthy machine: kern.memorystatus_vm_pressure_level reported
+        // `warning` continuously for minutes while kern.memorystatus_level simultaneously
+        // reported 46% available. Trusting the dispatch level would park the app in a
+        // permanent warning state and train the user to ignore it.
+        let latched = Fixture.system(
+            freeBytes: 454 * 1024 * 1024, compressedBytes: 9 * Fixture.gb,
+            available: 0.46, kernelRaw: .warning)
+        XCTAssertEqual(latched.kernelPressureLevel, .warning)
+        XCTAssertEqual(latched.pressureLevel, .normal)
+
+        let sample = Fixture.sample(bytes: 102_050_000, system: latched)
+        XCTAssertEqual(evaluator.severity(for: sample, thresholds: thresholds), .normal)
+    }
+
+    func testUnknownAvailabilityIsNotTreatedAsHealthyOrAsDanger() {
+        let unknown = Fixture.system(
+            freeBytes: 1 * Fixture.gb, compressedBytes: 5 * Fixture.gb, available: nil)
+        XCTAssertNil(unknown.availableFraction)
+        XCTAssertEqual(unknown.pressureLevel, .normal)
+    }
+
     func testHealthyLatencyIsNotAStall() {
         // The measured baseline on this machine, with Defender's ES extension authorising
         // every open, is a median of 8.5 µs. That must sit nowhere near the threshold.
@@ -97,7 +119,7 @@ final class SeverityEvaluatorTests: XCTestCase {
         XCTAssertEqual(evaluator.cause(for: bigProcessCalmMachine, thresholds: thresholds), .process)
 
         let warnPressure = Fixture.system(
-            freeBytes: 1 * Fixture.gb, compressedBytes: 5 * Fixture.gb, pressure: .warning)
+            freeBytes: 1 * Fixture.gb, compressedBytes: 5 * Fixture.gb, available: 0.18)
         let smallProcess = Fixture.sample(bytes: 60 * 1024 * 1024, system: warnPressure)
         XCTAssertEqual(evaluator.severity(for: smallProcess, thresholds: thresholds), .warning)
         XCTAssertEqual(evaluator.cause(for: smallProcess, thresholds: thresholds), .systemPressure)
