@@ -138,20 +138,20 @@ public struct ThresholdMonitor: Sendable {
     /// Re-arms a level only once *both* drivers have receded.
     ///
     /// The process condition alone is not sufficient: when an alert is driven by system
-    /// pressure the watched process may sit at a few megabytes, which would satisfy the
-    /// byte rule on every single tick and turn a sustained pressure episode into a
+    /// pressure or a stall the watched process may sit at a few megabytes, which would
+    /// satisfy the byte rule on every single tick and turn a sustained episode into a
     /// notification storm — the exact failure this monitor exists to prevent.
     private mutating func rearmIfRecovered(_ sample: MemorySample) {
         let bytes = sample.processResidentBytes
-        let system = evaluator.systemSeverity(sample.system)
+        let machine = evaluator.machineSeverity(for: sample)
 
         if Double(bytes) < Double(thresholds.warningBytes) * policy.releaseFraction,
-            system < .warning
+            machine < .warning
         {
             warningArmed = true
         }
         if Double(bytes) < Double(thresholds.criticalBytes) * policy.releaseFraction,
-            system < .critical
+            machine < .critical
         {
             criticalArmed = true
         }

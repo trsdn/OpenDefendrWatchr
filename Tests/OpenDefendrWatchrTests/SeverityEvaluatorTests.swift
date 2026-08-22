@@ -23,12 +23,59 @@ final class SeverityEvaluatorTests: XCTestCase {
     }
 
     func testSystemPressureAlarmsEvenWhenTheWatchedProcessIsInnocent() {
-        // Regression test for the 22:43 WindowServer watchdog panic: wdavdaemon sat at
-        // 55.69 MB while the machine died. Anchoring severity to the watched process meant
-        // the app logged "normal" for all 1260 samples up to 70 seconds before the panic.
-        let sample = Fixture.sample(bytes: 55_690_000, system: Fixture.prePanicSystem)
+        // Anchoring severity to the watched process meant the app logged "normal" for all
+        // 1260 samples of a real incident. Kernel-reported pressure must alarm on its own.
+        let sample = Fixture.sample(bytes: 55_690_000, system: Fixture.pressuredSystem)
         XCTAssertEqual(evaluator.severity(for: sample, thresholds: thresholds), .critical)
         XCTAssertEqual(evaluator.cause(for: sample, thresholds: thresholds), .systemPressure)
+    }
+
+    func testTheWindowServerPanicIsOnlyVisibleThroughTheStallProbe() {
+        // Regression test for the 22:43 WindowServer watchdog panic. Every memory signal
+        // was green — the panic report says `"memoryPressure": false` and wdavdaemon sat at
+        // 55.69 MB — because the fault was an Endpoint Security stall, not memory. If this
+        // ever goes back to .normal the app is blind to the failure that actually happened.
+        let memoryOnly = Fixture.sample(bytes: 55_690_000, system: Fixture.prePanicSystem)
+        XCTAssertEqual(evaluator.severity(for: memoryOnly, thresholds: thresholds), .normal)
+
+        let withStall = Fixture.sample(
+            bytes: 55_690_000, system: Fixture.prePanicSystem, stall: Fixture.stalledFilesystem)
+        XCTAssertEqual(evaluator.severity(for: withStall, thresholds: thresholds), .critical)
+        XCTAssertEqual(evaluator.cause(for: withStall, thresholds: thresholds), .systemStall)
+    }
+
+    func testHealthyLatencyIsNotAStall() {
+        // The measured baseline on this machine, with Defender's ES extension authorising
+        // every open, is a median of 8.5 µs. That must sit nowhere near the threshold.
+        let sample = Fixture.sample(bytes: 55_690_000, stall: Fixture.healthyStall)
+        XCTAssertEqual(evaluator.stallSeverity(Fixture.healthyStall), .normal)
+        XCTAssertEqual(evaluator.severity(for: sample, thresholds: thresholds), .normal)
+        XCTAssertLessThan(
+            Fixture.healthyStall.medianSeconds, StallThresholds.defaultWarningSeconds / 1000)
+    }
+
+    func testAMissingStallMeasurementNeverInventsAnAlarm() {
+        // A probe that could not run must read as "no data", not as "fast" and not as
+        // "stalled". Fabricating either would make the signal untrustworthy.
+        XCTAssertEqual(evaluator.stallSeverity(nil), .normal)
+        let sample = Fixture.sample(bytes: 55_690_000, stall: nil)
+        XCTAssertEqual(evaluator.severity(for: sample, thresholds: thresholds), .normal)
+    }
+
+    func testStallSeverityUsesBothThresholds() {
+        let warn = StallReading(medianSeconds: 0.030, worstSeconds: 0.05, sampleCount: 25)
+        let crit = StallReading(medianSeconds: 0.300, worstSeconds: 0.9, sampleCount: 25)
+        XCTAssertEqual(evaluator.stallSeverity(warn), .warning)
+        XCTAssertEqual(evaluator.stallSeverity(crit), .critical)
+    }
+
+    func testTheWatchedProcessOutranksAStallWhenBothAreCritical() {
+        // If Defender's memory has genuinely run away, that is the more actionable
+        // diagnosis and the one the alert should name.
+        let sample = Fixture.sample(
+            bytes: 19 * Fixture.gb, system: Fixture.healthySystem,
+            stall: Fixture.stalledFilesystem)
+        XCTAssertEqual(evaluator.cause(for: sample, thresholds: thresholds), .process)
     }
 
     func testOrdinaryLowFreeMemoryIsNotAnAlarm() {

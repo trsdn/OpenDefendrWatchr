@@ -40,11 +40,19 @@ public enum Severity: Int, Sendable, Comparable, CaseIterable {
 ///    watched process is doing. On 2026-08-22 the machine took a WindowServer watchdog
 ///    panic while `wdavdaemon` sat at 56 MB: anchoring severity to one process meant the
 ///    log recorded `normal` for all 1260 samples up to 70 seconds before the panic.
+/// 3. **A stalling machine is an alert even when memory is fine.** That same panic report
+///    states `memoryPressure: false`. The real fault was an Endpoint Security stall — 47
+///    threads across ~40 processes blocked in the ES kext, including `watchdogd` itself —
+///    which no memory rule can see. `StallReading` measures it directly.
 ///
 /// The pressure verdict comes from the kernel (`MemoryPressureLevel`), not from a
 /// hand-rolled fraction of free pages — see that type for why free pages are worthless here.
 public struct SeverityEvaluator: Sendable, Equatable {
-    public init() {}
+    public let stallThresholds: StallThresholds
+
+    public init(stallThresholds: StallThresholds = StallThresholds()) {
+        self.stallThresholds = stallThresholds
+    }
 
     /// Severity implied by the machine's own state, ignoring the watched process.
     public func systemSeverity(_ system: SystemMemoryUsage) -> Severity {
@@ -53,6 +61,20 @@ public struct SeverityEvaluator: Sendable, Equatable {
         case .warning: return .warning
         case .critical: return .critical
         }
+    }
+
+    /// Severity implied by filesystem latency. A probe that could not run yields `.normal`:
+    /// missing data must never manufacture an alert.
+    public func stallSeverity(_ stall: StallReading?) -> Severity {
+        guard let stall else { return .normal }
+        if stall.medianSeconds >= stallThresholds.criticalSeconds { return .critical }
+        if stall.medianSeconds >= stallThresholds.warningSeconds { return .warning }
+        return .normal
+    }
+
+    /// Everything wrong with the machine that is not the watched process.
+    public func machineSeverity(for sample: MemorySample) -> Severity {
+        max(systemSeverity(sample.system), stallSeverity(sample.stall))
     }
 
     /// Severity implied by the watched process alone.
@@ -69,15 +91,23 @@ public struct SeverityEvaluator: Sendable, Equatable {
     }
 
     public func severity(for sample: MemorySample, thresholds: Thresholds) -> Severity {
-        max(processSeverity(for: sample, thresholds: thresholds), systemSeverity(sample.system))
+        max(processSeverity(for: sample, thresholds: thresholds), machineSeverity(for: sample))
     }
 
-    /// What is actually driving the current severity — the process, or the machine.
-    /// Alert wording depends on this: telling the user "wdavdaemon is using 56 MB" while
-    /// the machine is dying would be worse than saying nothing.
+    /// What is actually driving the current severity. Alert wording depends on this:
+    /// telling the user "wdavdaemon is using 56 MB" while the machine is dying would be
+    /// worse than saying nothing.
+    ///
+    /// Ties go to the watched process, then to the stall, then to memory pressure — most
+    /// specific and most actionable diagnosis first.
     public func cause(for sample: MemorySample, thresholds: Thresholds) -> AlertCause {
-        processSeverity(for: sample, thresholds: thresholds) >= systemSeverity(sample.system)
-            ? .process : .systemPressure
+        let process = processSeverity(for: sample, thresholds: thresholds)
+        let stall = stallSeverity(sample.stall)
+        let pressure = systemSeverity(sample.system)
+
+        if process >= stall && process >= pressure { return .process }
+        if stall >= pressure { return .systemStall }
+        return .systemPressure
     }
 }
 
@@ -87,6 +117,8 @@ public enum AlertCause: Sendable, Equatable {
     case process
     /// The machine as a whole is under memory pressure.
     case systemPressure
+    /// Trivial filesystem operations are blocking — an Endpoint Security stall.
+    case systemStall
 }
 
 /// User-configurable byte thresholds. Defaults are tuned for a 24 GB machine.

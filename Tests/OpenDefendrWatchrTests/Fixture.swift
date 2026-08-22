@@ -45,23 +45,45 @@ enum Fixture {
         pressure: .normal
     )
 
-    /// The evening of 2026-08-22: the machine is minutes away from a WindowServer
-    /// watchdog panic, while `wdavdaemon` is a harmless 55.69 MB.
+    /// The evening of 2026-08-22, minutes before a WindowServer watchdog kernel panic.
+    ///
+    /// Faithful to the panic report, which states `"memoryPressure": false`,
+    /// `pagesWanted: 0`, `pagesReclaimed: 0`. The kernel saw **no** memory problem, and
+    /// `wdavdaemon` was a harmless 55.69 MB. Every memory-derived signal this app has is
+    /// green here — which is precisely why the stall probe exists.
     static let prePanicSystem = system(
-        freeBytes: 103_792_640,
-        compressedBytes: 10_039_394_304,
+        freeBytes: 6347 * pageSize,
+        compressedBytes: 590_949 * pageSize,
+        pressure: .normal
+    )
+
+    /// A machine the kernel itself has flagged, as in the morning jetsam event.
+    static let pressuredSystem = system(
+        freeBytes: 8491 * pageSize,
+        compressedBytes: 571_985 * pageSize,
         pressure: .critical
     )
+
+    /// Filesystem latency measured on a healthy machine with Defender's ES extension
+    /// active: median 8.5 µs over 2000 iterations.
+    static let healthyStall = StallReading(
+        medianSeconds: 0.0000085, worstSeconds: 0.0000199, sampleCount: 25)
+
+    /// What an Endpoint Security stall looks like: opens blocking for seconds.
+    static let stalledFilesystem = StallReading(
+        medianSeconds: 1.8, worstSeconds: 4.2, sampleCount: 25)
 
     static func sample(
         bytes: UInt64?,
         system: SystemMemoryUsage = healthySystem,
+        stall: StallReading? = nil,
         at seconds: TimeInterval = 0
     ) -> MemorySample {
         MemorySample(
             timestamp: Date(timeIntervalSince1970: seconds),
             process: bytes.map { ProcessMemoryUsage(residentBytes: $0, processCount: 1, pids: [557]) },
-            system: system
+            system: system,
+            stall: stall
         )
     }
 }

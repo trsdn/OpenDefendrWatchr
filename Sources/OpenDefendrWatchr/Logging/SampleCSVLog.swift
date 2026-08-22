@@ -6,7 +6,7 @@ import Foundation
 /// games, directly loadable into a spreadsheet or `gnuplot`.
 public final class SampleCSVLog: @unchecked Sendable {
     public static let header =
-        "timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,pressure_level,severity"
+        "timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,pressure_level,stall_us,severity"
 
     public let fileURL: URL
     private let maxBytes: UInt64
@@ -69,6 +69,7 @@ public final class SampleCSVLog: @unchecked Sendable {
             String(sample.system.compressedBytes),
             String(sample.system.pageSize),
             sample.system.pressureLevel.title,
+            sample.stall.map { String(format: "%.1f", $0.medianMicroseconds) } ?? "",
             severity.title.lowercased(),
         ]
         return fields.joined(separator: ",")

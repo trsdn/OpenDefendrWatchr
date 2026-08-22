@@ -27,6 +27,14 @@ if CommandLine.arguments.contains("--probe") {
                 + "total \(ByteFormatting.detailed(system.totalBytes)), "
                 + "page size \(system.pageSize)")
         print("kernel memory pressure: \(system.pressureLevel.title)")
+        if let stall = sample.stall {
+            print(
+                "file latency: median \(AlertPresentation.duration(stall.medianSeconds)), "
+                    + "worst \(AlertPresentation.duration(stall.worstSeconds)) "
+                    + "over \(stall.sampleCount) opens")
+        } else {
+            print("file latency: unavailable")
+        }
         print("severity: \(severity.title)")
         exit(0)
     } catch {

@@ -92,11 +92,21 @@ public struct MemorySample: Sendable, Equatable {
     public let timestamp: Date
     public let process: ProcessMemoryUsage?
     public let system: SystemMemoryUsage
+    /// Filesystem responsiveness, or `nil` when the probe could not run. Memory is not the
+    /// only way this machine dies: a stalled Endpoint Security client blocks threads
+    /// system-wide while memory looks entirely healthy.
+    public let stall: StallReading?
 
-    public init(timestamp: Date, process: ProcessMemoryUsage?, system: SystemMemoryUsage) {
+    public init(
+        timestamp: Date,
+        process: ProcessMemoryUsage?,
+        system: SystemMemoryUsage,
+        stall: StallReading? = nil
+    ) {
         self.timestamp = timestamp
         self.process = process
         self.system = system
+        self.stall = stall
     }
 
     /// Resident bytes of the watched process; 0 when it is not running.

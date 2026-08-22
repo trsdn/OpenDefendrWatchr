@@ -55,6 +55,12 @@ public enum AlertPresentation {
             case .warning: return "\(processName) memory high"
             case .normal: return "\(processName) memory normal"
             }
+        case .systemStall:
+            switch alert.severity {
+            case .critical: return "System is stalling"
+            case .warning: return "System slowing down"
+            case .normal: return "System responsive"
+            }
         }
     }
 
@@ -78,6 +84,13 @@ public enum AlertPresentation {
             let limit = ByteFormatting.detailed(alert.thresholdBytes)
             text = "\(processName) is using \(used) (threshold \(limit)). "
             text += "System free \(free), compressed \(compressed)."
+        case .systemStall:
+            // Memory is fine here, so say so — otherwise the user checks the wrong thing.
+            let median = alert.sample.stall.map { Self.duration($0.medianSeconds) } ?? "—"
+            text = "Basic file operations are taking \(median) instead of microseconds. "
+            text += "That is a stalled Endpoint Security extension blocking threads "
+            text += "system-wide, not a memory problem. "
+            text += "Memory pressure is \(alert.sample.system.pressureLevel.title)."
         }
 
         if alert.severity == .critical {
@@ -87,6 +100,14 @@ public enum AlertPresentation {
     }
 
     public static let testTitle = "OpenDefendrWatchr test notification"
+
+    /// Human-readable latency. Sub-millisecond values are the normal case and read better
+    /// in microseconds.
+    public static func duration(_ seconds: Double) -> String {
+        if seconds < 0.001 { return String(format: "%.0f µs", seconds * 1_000_000) }
+        if seconds < 1 { return String(format: "%.0f ms", seconds * 1000) }
+        return String(format: "%.1f s", seconds)
+    }
 
     /// The test body deliberately carries the live figures, so the user sees exactly the
     /// shape of a real alert rather than a content-free "this is a test".

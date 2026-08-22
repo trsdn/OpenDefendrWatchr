@@ -102,6 +102,13 @@ public final class WatchdogModel: ObservableObject {
         return "Memory pressure: \(sample.system.pressureLevel.title)"
     }
 
+    /// Filesystem latency, the signal that catches an Endpoint Security stall — a failure
+    /// mode in which every memory figure above still looks perfectly healthy.
+    public var stallLine: String {
+        guard let stall = currentSample?.stall else { return "File latency: —" }
+        return "File latency: \(AlertPresentation.duration(stall.medianSeconds))"
+    }
+
     public var peakLine: String {
         peakBytes == 0 ? "Peak: —" : "Peak this session: \(ByteFormatting.detailed(peakBytes))"
     }
