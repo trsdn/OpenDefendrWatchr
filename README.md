@@ -109,6 +109,37 @@ make probe      # print one live reading and exit
 disabled otherwise: user notifications (no bundle identity) and launch-at-login
 (`SMAppService`).
 
+### Release builds and notarisation
+
+`make bundle` signs with a development certificate, which is fine on the machine that built
+it but is rejected by Gatekeeper anywhere else. For distribution:
+
+```bash
+make bundle-release                       # Developer ID + secure timestamp
+NOTARY_PROFILE=<profile> make notarize    # submit, staple, verify
+```
+
+Store the credentials once, so no secret ever reaches the repo:
+
+```bash
+xcrun notarytool store-credentials <profile> \
+  --apple-id <you@example.com> --team-id <TEAMID> --password <app-specific-password>
+```
+
+`make bundle-release` fails if no Developer ID certificate is present rather than quietly
+falling back to a development cert. `make notarize` checks the signature *before* uploading,
+because notarisation otherwise rejects a wrongly signed bundle only after a multi-minute
+round trip. It ends with the check that actually matters — what Gatekeeper says on a machine
+that has never seen the build:
+
+```
+dist/OpenDefendrWatchr.app: accepted
+source=Notarized Developer ID
+```
+
+The stapled ticket means this holds offline too. Output is `dist/OpenDefendrWatchr-macos.zip`
+plus a `.sha256`.
+
 `make probe` is also the quickest sanity check:
 
 ```

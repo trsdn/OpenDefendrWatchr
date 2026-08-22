@@ -2,7 +2,7 @@ APP = OpenDefendrWatchr
 BUNDLE = $(APP).app
 INSTALL_DIR = /Applications
 
-.PHONY: help build run probe test bundle install uninstall clean
+.PHONY: help build run probe test bundle bundle-unsigned bundle-release notarize install uninstall clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -28,6 +28,12 @@ bundle: ## Build dist/OpenDefendrWatchr.app
 
 bundle-unsigned: ## Build the app bundle without code signing (CI)
 	SKIP_SIGN=1 bash scripts/build_swift_app.sh
+
+bundle-release: ## Build signed with Developer ID + secure timestamp (notarisable)
+	DISTRIBUTION=1 bash scripts/build_swift_app.sh
+
+notarize: ## Notarise and staple dist/OpenDefendrWatchr.app (needs NOTARY_PROFILE)
+	bash scripts/notarize_app.sh
 
 install: bundle ## Install to /Applications and relaunch
 	@osascript -e 'quit app "$(APP)"' 2>/dev/null || true
