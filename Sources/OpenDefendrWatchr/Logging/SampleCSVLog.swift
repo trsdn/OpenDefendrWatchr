@@ -14,6 +14,8 @@ public final class SampleCSVLog: @unchecked Sendable {
     private let processName: String
     private let queue = DispatchQueue(label: "com.opendefendrwatchr.csvlog")
     private let formatter: ISO8601DateFormatter
+    /// Checked once per process: the header cannot change underneath a running app.
+    private var checkedHeader = false
 
     public init(
         directory: URL,
@@ -45,6 +47,7 @@ public final class SampleCSVLog: @unchecked Sendable {
         let line = Self.row(
             sample: sample, severity: severity, processName: processName, formatter: formatter)
         queue.sync {
+            rotateIfHeaderIsStale()
             rotateIfNeeded()
             write(line: line)
         }
@@ -90,6 +93,32 @@ public final class SampleCSVLog: @unchecked Sendable {
         try? handle.write(contentsOf: Data((line + "\n").utf8))
     }
 
+    /// A log whose header predates the columns now being written is worse than no log: the
+    /// rows still parse, they just line up under the wrong names, and this file exists to be
+    /// read by someone else during an incident. When the header no longer matches, rotate —
+    /// the old rows keep their own header in the rotated file, and the live file starts
+    /// again with an accurate one.
+    private func rotateIfHeaderIsStale() {
+        guard !checkedHeader else { return }
+        checkedHeader = true
+
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: fileURL.path),
+            let handle = try? FileHandle(forReadingFrom: fileURL)
+        else { return }
+        defer { try? handle.close() }
+
+        // The header is the first line; reading a bounded prefix keeps this off the
+        // critical path for a log that may be megabytes long.
+        let probe = (try? handle.read(upToCount: 4096)) ?? Data()
+        guard let text = String(data: probe, encoding: .utf8),
+            let firstLine = text.split(separator: "\n", omittingEmptySubsequences: false).first
+        else { return }
+
+        guard String(firstLine) != Self.header else { return }
+        rotate()
+    }
+
     private func rotateIfNeeded() {
         let manager = FileManager.default
         guard
@@ -97,6 +126,12 @@ public final class SampleCSVLog: @unchecked Sendable {
             let size = attributes[.size] as? UInt64,
             size >= maxBytes
         else { return }
+
+        rotate()
+    }
+
+    private func rotate() {
+        let manager = FileManager.default
 
         // Drop the oldest, then shift each rotation one slot down.
         let oldest = rotatedURL(index: keepRotations)

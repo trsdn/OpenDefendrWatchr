@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The CSV header is now rotated when it no longer names the columns being written. The
+  header was only ever emitted at file creation, so a live log on disk was found carrying
+  a 10-column header above 14-column rows. The rows still parsed, they just lined up under
+  the wrong names — the worst outcome for a file whose purpose is to be read by someone
+  else during an incident. Old rows keep their own header in the rotated file.
 - Lower the SwiftPM manifest to tools version 6.1. The signing broker's runner ships Swift
   6.1, so a 6.2 manifest failed to build there and no release could be notarised.
 

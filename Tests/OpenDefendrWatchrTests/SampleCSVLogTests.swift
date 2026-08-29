@@ -89,4 +89,59 @@ final class SampleCSVLogTests: XCTestCase {
         let path = SampleCSVLog.defaultDirectory().path
         XCTAssertTrue(path.hasSuffix("/Library/Application Support/OpenDefendrWatchr"), path)
     }
+
+    // A real log on disk was found carrying a 10-column header above 14-column rows: the
+    // header is only written when the file is created, so columns added later never reached
+    // it. The rows still parse, they just line up under the wrong names — the worst kind of
+    // failure for a file whose entire purpose is to be read by someone else during an
+    // incident.
+    func testStaleHeaderIsRotatedAwayInsteadOfLeftAboveMismatchedRows() throws {
+        let log = SampleCSVLog(directory: directory)
+        let staleHeader = "timestamp,process,rss_bytes,rss_human,severity"
+        try (staleHeader + "\n" + "2026-08-28T05:58:01Z,wdavdaemon,83066880,79.22 MB,normal\n")
+            .write(to: log.fileURL, atomically: true, encoding: .utf8)
+
+        log.append(sample: Fixture.sample(bytes: Fixture.gb), severity: .normal)
+
+        let current = try String(contentsOf: log.fileURL, encoding: .utf8)
+        XCTAssertTrue(
+            current.hasPrefix(SampleCSVLog.header),
+            "the live file must restart with a header that matches the rows being written")
+        XCTAssertFalse(current.contains(staleHeader), "the stale header must not survive")
+
+        let rotated = log.fileURL.deletingPathExtension()
+            .appendingPathExtension("1").appendingPathExtension("csv")
+        let archived = try String(contentsOf: rotated, encoding: .utf8)
+        XCTAssertTrue(
+            archived.hasPrefix(staleHeader),
+            "old rows keep their own header rather than being deleted")
+    }
+
+    func testHeaderMatchingTheRowsIsLeftAlone() throws {
+        let log = SampleCSVLog(directory: directory)
+        log.append(sample: Fixture.sample(bytes: Fixture.gb), severity: .normal)
+        log.append(sample: Fixture.sample(bytes: Fixture.gb), severity: .normal)
+
+        let rotated = log.fileURL.deletingPathExtension()
+            .appendingPathExtension("1").appendingPathExtension("csv")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: rotated.path),
+            "a current header must not trigger a rotation")
+
+        let current = try String(contentsOf: log.fileURL, encoding: .utf8)
+        XCTAssertEqual(
+            current.split(separator: "\n").filter { $0 == SampleCSVLog.header }.count, 1)
+    }
+
+    func testHeaderColumnCountMatchesTheRowsItLabels() {
+        let row = SampleCSVLog.row(
+            sample: Fixture.sample(bytes: Fixture.gb),
+            severity: .normal,
+            processName: "wdavdaemon",
+            formatter: ISO8601DateFormatter())
+        XCTAssertEqual(
+            SampleCSVLog.header.split(separator: ",", omittingEmptySubsequences: false).count,
+            row.split(separator: ",", omittingEmptySubsequences: false).count,
+            "every column written must have a name in the header")
+    }
 }
