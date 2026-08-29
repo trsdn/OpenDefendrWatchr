@@ -48,8 +48,35 @@ public struct DefenderMemorySampler: MemorySampling {
         // perturb the very latency being measured.
         let stall = stallProbe.measure()
         let system = try systemReader.read()
-        let process = try processReader.usage(forExecutableNamed: executableName)
+
+        // Only the process reading needs a subprocess, and it is therefore the only part
+        // that fails when the process table is exhausted. Losing it must not discard the
+        // system and stall readings, which were already taken and need no fork — those are
+        // precisely the signals that matter while the machine is running out of resources.
+        // On 28 August this threw for four hours and took the whole tick with it, leaving
+        // no rows at all in the log for the period of greatest interest.
+        let readout: ProcessReadout
+        do {
+            readout = try processReader.usage(forExecutableNamed: executableName)
+                .map(ProcessReadout.running) ?? .notRunning
+        } catch {
+            readout = .unreadable(reason: SamplingFailure.describe(error))
+        }
+
         return MemorySample(
-            timestamp: clock(), process: process, system: system, stall: stall)
+            timestamp: clock(), readout: readout, system: system, stall: stall)
+    }
+}
+
+/// Turns a reader error into wording a user can act on.
+public enum SamplingFailure {
+    /// `EAGAIN` from a spawn means the system could not create another process. That is a
+    /// machine-wide condition, not a quirk of this app, so it is named as such rather than
+    /// reported as a generic failure to read Defender.
+    public static func describe(_ error: Error) -> String {
+        if CommandSpawnError.isResourceUnavailable(error) {
+            return "process table exhausted (EAGAIN)"
+        }
+        return String(describing: error)
     }
 }

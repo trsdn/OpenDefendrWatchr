@@ -115,6 +115,10 @@ public enum AlertPresentation {
         guard let sample else {
             return "Alerts are working. No \(processName) reading yet."
         }
+        if let reason = sample.processUnreadableReason {
+            return "Alerts are working. \(processName) cannot be measured (\(reason)); "
+                + "system free \(ByteFormatting.detailed(sample.system.freeBytes))."
+        }
         guard sample.isProcessRunning else {
             return "Alerts are working. \(processName) is not running; system free "
                 + "\(ByteFormatting.detailed(sample.system.freeBytes))."

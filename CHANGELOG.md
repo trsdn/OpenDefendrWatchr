@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `swap_total_bytes`, `swap_used_bytes` and `swap_used_pct` CSV columns from `vm.swapusage`,
+  recorded as correlation context. Swap deliberately does not influence severity: 97.5%
+  swap used was measured on this machine with 35% of memory available, so alarming on it
+  would train the user to ignore the app.
+- `ProcessReadout`, a third state for the watched process. A reading that *failed* is now
+  distinct from a process that is *absent*, in the sample, the menu bar (`?` rather than
+  `—`) and the log (`unreadable: <reason>` rather than `not running`).
 - `--login-item [enable|disable|status]`, which registers, unregisters and — most
   importantly — *reports* the launch-at-login state from the command line. The app was
   previously only ever started by hand, so a reboot silently ended monitoring and nothing
@@ -52,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed `ps` spawn no longer discards the whole poll. On 28 August 2026 the process
+  table was exhausted machine-wide for four hours (796 failed spawns across four unrelated
+  applications, 415 of them this app's), and because the process reading threw out of the
+  tick, the already-taken system and stall readings were thrown away with it and no CSV row
+  was written at all. The log has a 221-minute hole that is indistinguishable from the app
+  not running. Fork-free readings are now kept, and a blind tick still writes a row.
 - The CSV header is now rotated when it no longer names the columns being written. The
   header was only ever emitted at file creation, so a live log on disk was found carrying
   a 10-column header above 14-column rows. The rows still parsed, they just lined up under

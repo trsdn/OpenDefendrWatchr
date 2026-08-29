@@ -16,6 +16,8 @@ if CommandLine.arguments.contains("--probe") {
                 "wdavdaemon: \(ByteFormatting.detailed(process.residentBytes)) "
                     + "(\(ByteFormatting.compact(process.residentBytes))) "
                     + "across \(process.processCount) process(es), pids \(process.pids)")
+        } else if let reason = sample.processUnreadableReason {
+            print("wdavdaemon: could not be measured — \(reason)")
         } else {
             print("wdavdaemon: not running")
         }

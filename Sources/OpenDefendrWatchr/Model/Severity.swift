@@ -78,6 +78,11 @@ public struct SeverityEvaluator: Sendable, Equatable {
     }
 
     /// Severity implied by the watched process alone.
+    ///
+    /// An unreadable process yields `.normal`, the same as an absent one: a measurement
+    /// that could not be taken must not manufacture an alert. It must not be *presented*
+    /// as a healthy reading either, which is why the blindness is carried in the sample,
+    /// the menu bar and the log rather than being folded into this number.
     public func processSeverity(for sample: MemorySample, thresholds: Thresholds) -> Severity {
         guard sample.isProcessRunning else { return .normal }
         let bytes = sample.processResidentBytes

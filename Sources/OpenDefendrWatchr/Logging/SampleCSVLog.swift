@@ -6,7 +6,7 @@ import Foundation
 /// games, directly loadable into a spreadsheet or `gnuplot`.
 public final class SampleCSVLog: @unchecked Sendable {
     public static let header =
-        "timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,available_pct,pressure_level,kernel_pressure_raw,stall_us,severity"
+        "timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,available_pct,pressure_level,kernel_pressure_raw,stall_us,swap_total_bytes,swap_used_bytes,swap_used_pct,severity"
 
     public let fileURL: URL
     private let maxBytes: UInt64
@@ -61,12 +61,21 @@ public final class SampleCSVLog: @unchecked Sendable {
         formatter: ISO8601DateFormatter
     ) -> String {
         let rss = sample.processResidentBytes
+        let humanReadable: String
+        switch sample.readout {
+        case .running: humanReadable = ByteFormatting.detailed(rss)
+        case .notRunning: humanReadable = "not running"
+        // Distinct from "not running" on purpose: a blank or an absent row here would let
+        // a blind watchdog read as a healthy one.
+        case .unreadable(let reason): humanReadable = "unreadable: \(sanitised(reason))"
+        }
+
         let fields: [String] = [
             formatter.string(from: sample.timestamp),
             processName,
             sample.isProcessRunning ? String(rss) : "",
-            sample.isProcessRunning ? ByteFormatting.detailed(rss) : "not running",
-            String(sample.process?.processCount ?? 0),
+            humanReadable,
+            sample.isProcessReadable ? String(sample.process?.processCount ?? 0) : "",
             String(sample.system.totalBytes),
             String(sample.system.freeBytes),
             String(sample.system.compressedBytes),
@@ -75,9 +84,20 @@ public final class SampleCSVLog: @unchecked Sendable {
             sample.system.pressureLevel.title,
             sample.system.kernelPressureLevel.title,
             sample.stall.map { String(format: "%.1f", $0.medianMicroseconds) } ?? "",
+            sample.system.swap.map { String($0.totalBytes) } ?? "",
+            sample.system.swap.map { String($0.usedBytes) } ?? "",
+            sample.system.swap?.usedFraction.map { String(format: "%.1f", $0 * 100) } ?? "",
             severity.title.lowercased(),
         ]
         return fields.joined(separator: ",")
+    }
+
+    /// The log is plain CSV with no quoting, so a field must never introduce a separator.
+    /// Failure reasons are the only free-form text that reaches the file.
+    private static func sanitised(_ text: String) -> String {
+        text.replacingOccurrences(of: ",", with: ";")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
     }
 
     private func write(line: String) {

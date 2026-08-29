@@ -45,8 +45,18 @@ public struct HostSystemMemoryReader: SystemMemoryReading {
             compressedBytes: UInt64(stats.compressor_page_count) * bytesPerPage,
             pageSize: bytesPerPage,
             availableFraction: Self.availableFraction(),
-            kernelPressureLevel: Self.kernelPressureLevel()
+            kernelPressureLevel: Self.kernelPressureLevel(),
+            swap: Self.swapUsage()
         )
+    }
+
+    /// `vm.swapusage`. Returns `nil` when the sysctl is unreadable, so "unknown" is never
+    /// written to the log as "no swap in use".
+    static func swapUsage() -> SwapUsage? {
+        var usage = xsw_usage()
+        var size = MemoryLayout<xsw_usage>.size
+        guard sysctlbyname("vm.swapusage", &usage, &size, nil, 0) == 0 else { return nil }
+        return SwapUsage(totalBytes: usage.xsu_total, usedBytes: usage.xsu_used)
     }
 
     /// `kern.memorystatus_level`, the percentage of memory jetsam considers available.

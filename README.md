@@ -256,14 +256,23 @@ Reveal it from the menu ("Reveal Log in Finder"). One row per poll, rotated at 4
 three generations kept:
 
 ```csv
-timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,available_pct,pressure_level,kernel_pressure_raw,stall_us,severity
-2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,3,critical,critical,11.2,critical
+timestamp,process,rss_bytes,rss_human,process_count,system_total_bytes,system_free_bytes,system_compressed_bytes,page_size,available_pct,pressure_level,kernel_pressure_raw,stall_us,swap_total_bytes,swap_used_bytes,swap_used_pct,severity
+2026-01-01T00:00:00Z,wdavdaemon,20303237939,18.91 GB,1,25769803776,139116544,9371402240,16384,3,critical,critical,11.2,19327352832,18874368000,97.7,critical
 ```
 
 Raw byte columns for graphing, human-readable columns for pasting into a bug report. When
 Defender is not running the byte column is empty rather than `0`, so a gap plots as a gap
 instead of a fake drop to zero. `stall_us` is the median `open()` latency in microseconds;
 it should sit in single digits, and a jump into the thousands is an Endpoint Security stall.
+
+`rss_human` carries three distinguishable outcomes and never conflates them: a size, `not
+running`, or `unreadable: <reason>`. Swap is recorded for correlation only — a nearly full
+swap file is normal on a long-uptime machine and never raises severity by itself. Every
+column that could not be measured is left **empty**, never zero.
+
+If the header ever stops matching the columns being written — because a version added one —
+the file is rotated rather than appended to. A log whose header mislabels its own columns is
+worse than no log during an incident.
 
 ## How the memory reading works
 
@@ -279,6 +288,68 @@ it should sit in single digits, and a jump into the thousands is an Endpoint Sec
 - Memory pressure comes from `kern.memorystatus_level`. The raw
   `kern.memorystatus_vm_pressure_level` is logged alongside it for evidence, but never used
   to decide severity.
+
+### Why the `ps` call cannot be removed
+
+It is the app's only fork, and it is not there by choice. Measured on the affected machine
+against root-owned `wdavdaemon`:
+
+| Attempt as a normal user | Result |
+| --- | --- |
+| `proc_pid_rusage(pid, …)` | `-1`, `errno 1` (EPERM) |
+| `proc_pidinfo(pid, PROC_PIDTASKINFO, …)` | `0` bytes copied, `resident_size` unset |
+| `proc_pidinfo(pid, PROC_PIDTASKALLINFO, …)` | `0` bytes copied |
+| `sysctl(KERN_PROC_ALL)` | enumerates fine, but `struct vmspace` in the macOS SDK is entirely `dummy` fields — there is no RSS in it |
+| `ps -o rss= -p <pid>` | works |
+
+`/bin/ps` is `-rwsr-xr-x root wheel` — **setuid root**. That, and only that, is why it can
+read the figure. No `sysctl` route substitutes for the privilege. Process *enumeration* is
+already fork-free via `libproc`; only the resident size of root-owned PIDs needs the spawn.
+
+Since the fork cannot be removed, the app is built to fail loudly instead — see below.
+
+## When the machine will not let the app measure
+
+On 28 August 2026 the process table was exhausted machine-wide. Between **03:53:42 and
+07:57:29** — nearly four hours, ending 30 seconds before a reboot — the unified log recorded
+**796 failed process spawns** across four mutually unrelated applications:
+
+| Process | Failed spawns |
+| --- | --- |
+| OpenDefendrWatchr | 415 |
+| iStat Menus Menubar | 376 |
+| com.microsoft.teams2.agent | 4 |
+| SetappAgent | 1 |
+
+All with `NSTask: Failed to spawn task due to receiving EAGAIN many times despite retrying`.
+This is worth stating precisely, because the impact of process-table exhaustion is usually
+described as "eventually you cannot open a terminal any more". What is actually documented
+here is stronger: **arbitrary, unprivileged, third-party applications were unable to start
+subprocesses for four hours**, and none of them had anything to do with the leak causing it.
+
+The 415 failures are not this app pushing: at a 30 s poll that window holds ~487 ticks, so
+0.85 messages per tick — one per attempt, at the normal cadence. `NSTask` emits the message
+once after exhausting *its own* internal retries. The app is not amplifying the shortage.
+
+What the app did get wrong was the response. A failed `ps` spawn threw out of the whole
+tick, discarding the system and stall readings that had already been taken and needed no
+fork at all — and the failure path wrote no CSV row. The log therefore contains a
+**221-minute hole** (03:55:28 → 07:36:51 local) that is indistinguishable from the app not
+running. A watchdog that goes quiet exactly when the machine is in trouble is useless in the
+only hour that matters.
+
+That is fixed. A tick whose process reading fails now:
+
+- keeps the system and stall readings, so the machine verdict still stands;
+- reports `?` in the menu bar — not `—`, which means "Defender is not running", and not a
+  stale figure;
+- writes a CSV row with an empty `rss_bytes` and `unreadable: process table exhausted
+  (EAGAIN)` in `rss_human`.
+
+Severity is deliberately *not* raised by a failed reading. An unreadable process contributes
+`.normal`, exactly like an absent one, because a measurement that could not be taken must
+not manufacture an alert. It must not be presented as a healthy reading either, which is why
+the blindness is carried in the menu bar and the log instead of being folded into a number.
 
 ## How the stall detection works
 

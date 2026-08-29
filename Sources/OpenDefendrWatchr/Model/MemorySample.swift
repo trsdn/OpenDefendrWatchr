@@ -57,6 +57,29 @@ public enum MemoryPressureLevel: Int, Sendable, Equatable, Comparable, CaseItera
     }
 }
 
+/// Swap file usage from `vm.swapusage`. Recorded as context only.
+///
+/// A nearly full swap file is *not* by itself a fault: macOS grows and reuses swap freely,
+/// and 97% used has been observed on this machine with 35% of memory available. It earns a
+/// column because it is the kind of signal one wants to correlate after the fact, not
+/// because it is actionable on its own.
+public struct SwapUsage: Sendable, Equatable {
+    public let totalBytes: UInt64
+    public let usedBytes: UInt64
+
+    public init(totalBytes: UInt64, usedBytes: UInt64) {
+        self.totalBytes = totalBytes
+        self.usedBytes = usedBytes
+    }
+
+    /// `nil` rather than `0` when no swap file exists, so an absent swap file is not
+    /// reported as an empty one.
+    public var usedFraction: Double? {
+        guard totalBytes > 0 else { return nil }
+        return Double(usedBytes) / Double(totalBytes)
+    }
+}
+
 /// System-wide memory state, derived from `host_statistics64` + `hw.memsize`.
 public struct SystemMemoryUsage: Sendable, Equatable {
     /// At or below this fraction available, the machine is in trouble.
@@ -75,6 +98,9 @@ public struct SystemMemoryUsage: Sendable, Equatable {
     /// Raw `kern.memorystatus_vm_pressure_level`, recorded for the incident log only.
     /// Deliberately not used for alarm — see `MemoryPressureLevel` for why it latches.
     public let kernelPressureLevel: MemoryPressureLevel
+    /// `vm.swapusage`. `nil` when unreadable — recorded as context, never used for alarm:
+    /// a full swap file is normal on a machine that has simply been up a long time.
+    public let swap: SwapUsage?
 
     public init(
         totalBytes: UInt64,
@@ -82,7 +108,8 @@ public struct SystemMemoryUsage: Sendable, Equatable {
         compressedBytes: UInt64,
         pageSize: UInt64,
         availableFraction: Double? = nil,
-        kernelPressureLevel: MemoryPressureLevel = .normal
+        kernelPressureLevel: MemoryPressureLevel = .normal,
+        swap: SwapUsage? = nil
     ) {
         self.totalBytes = totalBytes
         self.freeBytes = freeBytes
@@ -90,6 +117,7 @@ public struct SystemMemoryUsage: Sendable, Equatable {
         self.pageSize = pageSize
         self.availableFraction = availableFraction
         self.kernelPressureLevel = kernelPressureLevel
+        self.swap = swap
     }
 
     /// The verdict severity is derived from. An unreadable measurement yields `.normal`:
@@ -114,10 +142,26 @@ public struct SystemMemoryUsage: Sendable, Equatable {
     }
 }
 
+/// What the process reader was able to determine this tick.
+///
+/// Three outcomes, deliberately kept distinct. Reading the watched process needs `ps`,
+/// because `proc_pid_rusage` returns EPERM for a root-owned daemon and `ps` is setuid
+/// root; so the one measurement in this app that requires a fork is also the first thing
+/// to fail when the process table is exhausted. That happened for four hours on 28 August,
+/// and collapsing `unreadable` into `notRunning` would have reported Defender as absent
+/// while it was in fact unobservable.
+public enum ProcessReadout: Sendable, Equatable {
+    case running(ProcessMemoryUsage)
+    /// Defender genuinely is not running. Never rendered as `0 B`.
+    case notRunning
+    /// The measurement could not be taken. Not a healthy reading, and not an absent process.
+    case unreadable(reason: String)
+}
+
 /// One poll tick: the watched process (nil when Defender is not running) plus system state.
 public struct MemorySample: Sendable, Equatable {
     public let timestamp: Date
-    public let process: ProcessMemoryUsage?
+    public let readout: ProcessReadout
     public let system: SystemMemoryUsage
     /// Filesystem responsiveness, or `nil` when the probe could not run. Memory is not the
     /// only way this machine dies: a stalled Endpoint Security client blocks threads
@@ -126,18 +170,49 @@ public struct MemorySample: Sendable, Equatable {
 
     public init(
         timestamp: Date,
-        process: ProcessMemoryUsage?,
+        readout: ProcessReadout,
         system: SystemMemoryUsage,
         stall: StallReading? = nil
     ) {
         self.timestamp = timestamp
-        self.process = process
+        self.readout = readout
         self.system = system
         self.stall = stall
+    }
+
+    public init(
+        timestamp: Date,
+        process: ProcessMemoryUsage?,
+        system: SystemMemoryUsage,
+        stall: StallReading? = nil
+    ) {
+        self.init(
+            timestamp: timestamp,
+            readout: process.map(ProcessReadout.running) ?? .notRunning,
+            system: system,
+            stall: stall)
+    }
+
+    public var process: ProcessMemoryUsage? {
+        if case .running(let usage) = readout { return usage }
+        return nil
     }
 
     /// Resident bytes of the watched process; 0 when it is not running.
     public var processResidentBytes: UInt64 { process?.residentBytes ?? 0 }
 
     public var isProcessRunning: Bool { process != nil }
+
+    /// False when the reading could not be taken at all. Callers that would otherwise
+    /// present "not running" must check this first: an unobservable process is not an
+    /// absent one, and saying so would be the same fabrication as reporting `0 B`.
+    public var isProcessReadable: Bool {
+        if case .unreadable = readout { return false }
+        return true
+    }
+
+    public var processUnreadableReason: String? {
+        if case .unreadable(let reason) = readout { return reason }
+        return nil
+    }
 }

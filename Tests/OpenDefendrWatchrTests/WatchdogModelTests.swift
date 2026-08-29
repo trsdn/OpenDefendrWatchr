@@ -100,6 +100,30 @@ final class WatchdogModelTests: XCTestCase {
         XCTAssertTrue(model.systemLine.contains("free"))
     }
 
+    /// The 2026-08-28 window: `ps` could not be spawned, so Defender's size was unknown
+    /// while the machine itself was still perfectly measurable. The app must say so, and
+    /// must still leave a row behind — a silent gap is what made the failure invisible.
+    func testUnmeasurableProcessIsShownAsBlindAndStillLogged() async {
+        let (model, notifier) = makeModel(samples: [Fixture.unreadableSample()])
+        await model.pollOnce()
+
+        guard case .processUnreadable = model.state else {
+            return XCTFail("expected processUnreadable, got \(model.state)")
+        }
+        XCTAssertEqual(model.menuBarTitle, "?")
+        XCTAssertNotEqual(model.menuBarTitle, "—", "blind must not look like absent")
+        XCTAssertTrue(model.statusLine.contains("cannot measure"), model.statusLine)
+        XCTAssertTrue(model.statusLine.contains("EAGAIN"), model.statusLine)
+        XCTAssertTrue(model.systemLine.contains("free"))
+        XCTAssertTrue(notifier.delivered.isEmpty)
+
+        let log = try? String(
+            contentsOf: directory.appendingPathComponent("wdavdaemon-memory.csv"),
+            encoding: .utf8)
+        XCTAssertEqual(log?.split(separator: "\n").count, 2, "header plus one blind row")
+        XCTAssertTrue(log?.contains("unreadable:") == true)
+    }
+
     func testSamplingFailureIsSurfacedInsteadOfCrashing() async {
         let (model, _) = makeModel(samples: [], error: StubError())
         await model.pollOnce()

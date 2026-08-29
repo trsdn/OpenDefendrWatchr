@@ -13,7 +13,8 @@ enum Fixture {
         freeBytes: UInt64,
         compressedBytes: UInt64,
         available: Double? = 0.46,
-        kernelRaw: MemoryPressureLevel = .warning
+        kernelRaw: MemoryPressureLevel = .warning,
+        swap: SwapUsage? = nil
     ) -> SystemMemoryUsage {
         SystemMemoryUsage(
             totalBytes: totalRAM,
@@ -21,7 +22,8 @@ enum Fixture {
             compressedBytes: compressedBytes,
             pageSize: pageSize,
             availableFraction: available,
-            kernelPressureLevel: kernelRaw
+            kernelPressureLevel: kernelRaw,
+            swap: swap
         )
     }
 
@@ -84,6 +86,22 @@ enum Fixture {
         MemorySample(
             timestamp: Date(timeIntervalSince1970: seconds),
             process: bytes.map { ProcessMemoryUsage(residentBytes: $0, processCount: 1, pids: [557]) },
+            system: system,
+            stall: stall
+        )
+    }
+
+    /// A tick taken while the process table was exhausted: the fork-free readings survived,
+    /// the `ps` spawn did not. This is the 2026-08-28 03:53–07:57 window.
+    static func unreadableSample(
+        reason: String = "process table exhausted (EAGAIN)",
+        system: SystemMemoryUsage = healthySystem,
+        stall: StallReading? = nil,
+        at seconds: TimeInterval = 0
+    ) -> MemorySample {
+        MemorySample(
+            timestamp: Date(timeIntervalSince1970: seconds),
+            readout: .unreadable(reason: reason),
             system: system,
             stall: stall
         )

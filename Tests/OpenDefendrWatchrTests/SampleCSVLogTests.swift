@@ -144,4 +144,36 @@ final class SampleCSVLogTests: XCTestCase {
             row.split(separator: ",", omittingEmptySubsequences: false).count,
             "every column written must have a name in the header")
     }
+
+    /// Swap is context, not alarm — but an unreadable swap sysctl must leave the columns
+    /// empty rather than claim 0 bytes in use, the same rule that governs every other
+    /// missing measurement here.
+    func testSwapIsRecordedAndUnknownSwapIsNotWrittenAsZero() throws {
+        let columns = SampleCSVLog.header.components(separatedBy: ",")
+        let used = try XCTUnwrap(columns.firstIndex(of: "swap_used_bytes"))
+        let percent = try XCTUnwrap(columns.firstIndex(of: "swap_used_pct"))
+
+        let measured = SampleCSVLog.row(
+            sample: Fixture.sample(
+                bytes: Fixture.gb,
+                system: Fixture.system(
+                    freeBytes: Fixture.gb,
+                    compressedBytes: Fixture.gb,
+                    swap: SwapUsage(totalBytes: 18_432, usedBytes: 17_976))),
+            severity: .normal,
+            processName: "wdavdaemon",
+            formatter: ISO8601DateFormatter()
+        ).components(separatedBy: ",")
+        XCTAssertEqual(measured[used], "17976")
+        XCTAssertEqual(measured[percent], "97.5")
+
+        let unknown = SampleCSVLog.row(
+            sample: Fixture.sample(bytes: Fixture.gb),
+            severity: .normal,
+            processName: "wdavdaemon",
+            formatter: ISO8601DateFormatter()
+        ).components(separatedBy: ",")
+        XCTAssertEqual(unknown[used], "")
+        XCTAssertEqual(unknown[percent], "")
+    }
 }

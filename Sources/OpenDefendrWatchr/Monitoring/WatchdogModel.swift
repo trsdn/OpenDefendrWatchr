@@ -8,6 +8,10 @@ public final class WatchdogModel: ObservableObject {
         case starting
         case running(MemorySample, Severity)
         case processNotRunning(MemorySample)
+        /// The system reading succeeded but the watched process could not be measured.
+        /// Kept apart from `processNotRunning` so a blind watchdog never looks like one
+        /// reporting an absent Defender.
+        case processUnreadable(MemorySample, Severity)
         case failed(String)
     }
 
@@ -66,6 +70,9 @@ public final class WatchdogModel: ObservableObject {
         switch state {
         case .running(let sample, _): return ByteFormatting.compact(sample.processResidentBytes)
         case .processNotRunning: return "—"
+        // Not "—": that is the glyph for a process known to be absent. Blind is its own
+        // state and has to look like one in the only place the user habitually glances.
+        case .processUnreadable: return "?"
         case .starting: return "…"
         case .failed: return "!"
         }
@@ -77,6 +84,9 @@ public final class WatchdogModel: ObservableObject {
             return "Sampling \(processName)…"
         case .processNotRunning:
             return "\(processName) is not running"
+        case .processUnreadable(let sample, _):
+            let reason = sample.processUnreadableReason ?? "unknown reason"
+            return "\(processName): cannot measure — \(reason)"
         case .failed(let message):
             return "Sampling failed: \(message)"
         case .running(let sample, let severity):
@@ -119,7 +129,9 @@ public final class WatchdogModel: ObservableObject {
 
     public var currentSample: MemorySample? {
         switch state {
-        case .running(let sample, _), .processNotRunning(let sample): return sample
+        case .running(let sample, _), .processNotRunning(let sample),
+            .processUnreadable(let sample, _):
+            return sample
         case .starting, .failed: return nil
         }
     }
@@ -176,7 +188,11 @@ public final class WatchdogModel: ObservableObject {
         let alert = monitor.evaluate(sample)
         let severity = monitor.currentSeverity
         peakBytes = max(peakBytes, sample.processResidentBytes)
-        state = sample.isProcessRunning ? .running(sample, severity) : .processNotRunning(sample)
+        switch sample.readout {
+        case .running: state = .running(sample, severity)
+        case .notRunning: state = .processNotRunning(sample)
+        case .unreadable: state = .processUnreadable(sample, severity)
+        }
         log.append(sample: sample, severity: severity)
         if let alert { notifier.deliver(alert) }
     }
