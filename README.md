@@ -205,6 +205,47 @@ log show --last 5m --predicate 'process == "usernoted"' --style compact \
   | grep -i opendefendr | grep -i present
 ```
 
+## Surviving a reboot
+
+A watchdog that does not come back is worse than no watchdog, for the same reason: you will
+assume it is still watching. This one was once started by hand out of a build directory,
+so an ordinary restart ended monitoring and nothing said so for 30 hours.
+
+Install it properly and register it, then **read the state back** rather than trusting that
+the click worked:
+
+```bash
+make install
+/Applications/OpenDefendrWatchr.app/Contents/MacOS/OpenDefendrWatchr --login-item enable
+/Applications/OpenDefendrWatchr.app/Contents/MacOS/OpenDefendrWatchr --login-item status
+```
+
+```
+launch at login: enabled
+bundle: /Applications/OpenDefendrWatchr.app
+```
+
+The command exits non-zero when the state does not match what was asked, and it
+distinguishes `requiresApproval` — registered but still switched off in System Settings ▸
+General ▸ Login Items — from `notRegistered` and `notFound`. Only one of those three is
+something you can fix, and reporting all of them as "off" would hide which.
+
+`SMAppService` needs a real installed bundle: run from `swift run` or a bare binary the
+command refuses rather than silently doing nothing.
+
+macOS confirms the registration independently, which is worth checking once:
+
+```bash
+log show --last 5m --predicate 'subsystem == "com.apple.backgroundtaskmanagement"' \
+  --style compact | grep -i opendefendr
+```
+
+This covers loss at reboot, which is the only way the app has actually died. It does **not**
+restart the app after a mid-session crash — there has never been one (no crash report, and
+no jetsam kill across six jetsam events), so `KeepAlive` would be untested machinery
+guarding a failure that has not happened, and it would race with the login item for
+ownership of the process.
+
 ## The log
 
 ```

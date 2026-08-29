@@ -72,4 +72,39 @@ if CommandLine.arguments.contains("--notify-test") {
     exit(status.isSuccess ? 0 : 1)
 }
 
+// `--login-item [enable|disable|status]` reports or changes the launch-at-login
+// registration and exits. This exists because a menu bar watchdog that silently failed to
+// register is indistinguishable from one that registered fine, and the whole point of the
+// app is to not fail silently. Must be run from the installed .app: `SMAppService` needs a
+// real bundle identity.
+if let index = CommandLine.arguments.firstIndex(of: "--login-item") {
+    let preferences = Preferences()
+    let action = CommandLine.arguments.dropFirst(index + 1).first ?? "status"
+
+    guard preferences.launchAtLoginAvailable else {
+        FileHandle.standardError.write(
+            Data(
+                "login-item: unavailable — run the installed .app, not a bare binary\n".utf8))
+        exit(1)
+    }
+
+    switch action {
+    case "enable":
+        preferences.launchAtLoginEnabled = true
+    case "disable":
+        preferences.launchAtLoginEnabled = false
+    case "status":
+        break
+    default:
+        FileHandle.standardError.write(
+            Data("login-item: expected enable, disable or status\n".utf8))
+        exit(2)
+    }
+
+    let status = preferences.launchAtLoginStatus
+    print("launch at login: \(status.title)")
+    print("bundle: \(Bundle.main.bundleURL.path)")
+    exit(status.isEnabled == (action != "disable") ? 0 : 1)
+}
+
 WatchrApp.main()

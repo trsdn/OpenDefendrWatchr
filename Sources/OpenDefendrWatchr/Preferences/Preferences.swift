@@ -83,9 +83,15 @@ public final class Preferences: ObservableObject {
 
     // MARK: - Launch at login
 
+    /// The registration state, readable rather than inferred from a `Bool`. Reporting
+    /// "off" for `requiresApproval` would hide the one case the user can actually fix.
+    public var launchAtLoginStatus: LaunchAtLoginStatus {
+        LaunchAtLoginStatus(SMAppService.mainApp.status)
+    }
+
     /// Uses `SMAppService` (macOS 13+), not a legacy login item.
     public var launchAtLoginEnabled: Bool {
-        get { SMAppService.mainApp.status == .enabled }
+        get { launchAtLoginStatus.isEnabled }
         set {
             objectWillChange.send()
             do {
@@ -104,5 +110,46 @@ public final class Preferences: ObservableObject {
     /// it always fails, so the UI disables the toggle rather than lying about it.
     public var launchAtLoginAvailable: Bool {
         Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
+    }
+}
+
+/// A readable rendering of `SMAppService.Status`.
+///
+/// The distinction matters: `notFound` means macOS has no record of the app at a location
+/// it is willing to launch (typically a bundle outside `/Applications`), while
+/// `requiresApproval` means registration succeeded but the user still has to switch it on
+/// in System Settings. Collapsing both into "not enabled" would hide which one to fix.
+public enum LaunchAtLoginStatus: Sendable {
+    case enabled
+    case notRegistered
+    case requiresApproval
+    case notFound
+    case unknown
+
+    public init(_ status: SMAppService.Status) {
+        switch status {
+        case .enabled: self = .enabled
+        case .notRegistered: self = .notRegistered
+        case .requiresApproval: self = .requiresApproval
+        case .notFound: self = .notFound
+        @unknown default: self = .unknown
+        }
+    }
+
+    public var isEnabled: Bool { self == .enabled }
+
+    public var title: String {
+        switch self {
+        case .enabled:
+            return "enabled"
+        case .notRegistered:
+            return "not registered"
+        case .requiresApproval:
+            return "registered, but awaiting approval in System Settings > General > Login Items"
+        case .notFound:
+            return "not found (macOS has no launchable record of this bundle)"
+        case .unknown:
+            return "unknown"
+        }
     }
 }

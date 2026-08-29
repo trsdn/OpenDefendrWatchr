@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--login-item [enable|disable|status]`, which registers, unregisters and — most
+  importantly — *reports* the launch-at-login state from the command line. The app was
+  previously only ever started by hand, so a reboot silently ended monitoring and nothing
+  said so for 30 hours. Registration that cannot be read back is indistinguishable from
+  registration that failed.
+- `LaunchAtLoginStatus`, which keeps `requiresApproval` distinct from `notRegistered` and
+  `notFound`. Collapsing them into a single "off" would hide the only one of the three the
+  user can act on.
 - `StallProbe`, which times `open()`/`close()` cycles to measure how long trivial
   filesystem work is taking. Every `open()` is authorised by the kernel's Endpoint Security
   layer, so this latency is a direct measurement of an ES client stalling. Surfaced in the

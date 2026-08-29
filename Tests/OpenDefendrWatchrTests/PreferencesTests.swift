@@ -66,4 +66,30 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(Preferences.bytes(fromGigabytes: 0.5), 536_870_912)
         XCTAssertEqual(Preferences.bytes(fromGigabytes: -3), 0)
     }
+
+    // The watchdog died once because nobody could tell it was gone. Registration state has
+    // to be reportable, and "awaiting approval" must not be reported as plain "off" — that
+    // is the one failure the user can actually act on.
+    func testOnlyEnabledCountsAsEnabled() {
+        XCTAssertTrue(LaunchAtLoginStatus.enabled.isEnabled)
+        for status in [
+            LaunchAtLoginStatus.notRegistered, .requiresApproval, .notFound, .unknown,
+        ] {
+            XCTAssertFalse(status.isEnabled, "\(status) must not be reported as enabled")
+        }
+    }
+
+    func testApprovalAndMissingBundleAreDistinguishable() {
+        XCTAssertNotEqual(
+            LaunchAtLoginStatus.requiresApproval.title, LaunchAtLoginStatus.notRegistered.title)
+        XCTAssertTrue(LaunchAtLoginStatus.requiresApproval.title.contains("approval"))
+        XCTAssertTrue(LaunchAtLoginStatus.notFound.title.contains("not found"))
+    }
+
+    func testEverySystemStatusMapsToADistinctCase() {
+        XCTAssertEqual(LaunchAtLoginStatus(.enabled), .enabled)
+        XCTAssertEqual(LaunchAtLoginStatus(.notRegistered), .notRegistered)
+        XCTAssertEqual(LaunchAtLoginStatus(.requiresApproval), .requiresApproval)
+        XCTAssertEqual(LaunchAtLoginStatus(.notFound), .notFound)
+    }
 }
