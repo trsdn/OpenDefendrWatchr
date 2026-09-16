@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- In-app updates via [AppUpdater](https://github.com/mxcl/AppUpdater): a daily background
+  check (can be switched off), **Check for Updates…**, and **Install Update X.Y.Z and
+  Restart** once a newer release has been downloaded and validated. Releases must carry
+  `OpenDefendrWatchr-X.Y.Z.dmg`, which the notarization broker publishes.
+
 - `swap_total_bytes`, `swap_used_bytes` and `swap_used_pct` CSV columns from `vm.swapusage`,
   recorded as correlation context. Swap deliberately does not influence severity: 97.5%
   swap used was measured on this machine with 35% of memory available, so alarming on it

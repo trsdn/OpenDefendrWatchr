@@ -4,10 +4,12 @@ import SwiftUI
 /// Contents of the menu bar menu.
 public struct MenuBarContentView: View {
     @ObservedObject var model: WatchdogModel
+    @ObservedObject var updates: UpdateManager
     private let restartService = DefenderRestartService()
 
-    public init(model: WatchdogModel) {
+    public init(model: WatchdogModel, updates: UpdateManager) {
         self.model = model
+        self.updates = updates
     }
 
     public var body: some View {
@@ -50,6 +52,10 @@ public struct MenuBarContentView: View {
 
         Divider()
 
+        updateItems
+
+        Divider()
+
         SettingsLink {
             Text("Settings…")
         }
@@ -59,6 +65,81 @@ public struct MenuBarContentView: View {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q", modifiers: .command)
+    }
+
+    @ViewBuilder
+    private var updateItems: some View {
+        switch updates.state {
+        case .idle:
+            EmptyView()
+        case .checking:
+            Text("Checking for updates…")
+        case .upToDate:
+            Text("OpenDefendrWatchr is up to date")
+        case .downloading(let version):
+            Text("Downloading update \(version)…")
+        case .readyToInstall(let version):
+            Button("Install Update \(version) and Restart") {
+                installUpdate()
+            }
+            Button("Later") {
+                Task { await updates.dismiss() }
+            }
+        case .installing:
+            Text("Installing update…")
+        case .failed(let message):
+            Text("Update failed: \(message)")
+        }
+        Button("Check for Updates…") {
+            checkForUpdates()
+        }
+        .disabled(updates.isBusy || updates.hasPreparedUpdate)
+        Toggle("Check for Updates Automatically", isOn: $updates.automaticChecksEnabled)
+    }
+
+    /// The menu closes on click, so the answer to a check the user asked for comes as an
+    /// alert rather than as menu text they may never reopen the menu to see.
+    private func checkForUpdates() {
+        Task {
+            await updates.check(userInitiated: true)
+            switch updates.state {
+            case .upToDate:
+                presentResult(
+                    title: "OpenDefendrWatchr is up to date",
+                    message: "You are running the newest release."
+                )
+            case .failed(let message):
+                presentResult(title: "Update check failed", message: message)
+            case .readyToInstall(let version):
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "OpenDefendrWatchr \(version) is ready to install"
+                alert.informativeText =
+                    "OpenDefendrWatchr quits, updates itself and opens again. Monitoring pauses for a few seconds."
+                alert.addButton(withTitle: "Install and Restart")
+                alert.addButton(withTitle: "Later")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    installUpdate()
+                }
+            default:
+                break
+            }
+        }
+    }
+
+    /// Stops polling first so the process is not replaced mid-sample. If installation
+    /// fails the app keeps running, so polling resumes: a watchdog that silently stopped
+    /// watching would be worse than no update.
+    private func installUpdate() {
+        Task {
+            model.stop()
+            if await !updates.installAndRelaunch() {
+                model.start()
+                if case .failed(let message) = updates.state {
+                    presentResult(title: "Update could not be installed", message: message)
+                }
+            }
+        }
     }
 
     private func revealLog() {

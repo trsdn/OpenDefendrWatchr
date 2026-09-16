@@ -2,10 +2,12 @@ import SwiftUI
 
 public struct PreferencesView: View {
     @ObservedObject var preferences: Preferences
+    @ObservedObject var updates: UpdateManager
     @State private var launchAtLogin: Bool
 
-    public init(preferences: Preferences) {
+    public init(preferences: Preferences, updates: UpdateManager) {
         self.preferences = preferences
+        self.updates = updates
         _launchAtLogin = State(initialValue: preferences.launchAtLoginEnabled)
     }
 
@@ -48,6 +50,13 @@ public struct PreferencesView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: $updates.automaticChecksEnabled)
+                Text("Checks GitHub Releases once a day. Updates are only installed when you choose to.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

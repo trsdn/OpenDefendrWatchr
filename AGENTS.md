@@ -14,6 +14,7 @@ incident that motivated it.
 
 ```
 Package.swift                             # SwiftPM package (library + executable)
+Package.resolved                          # Committed lock; must match the broker's copy
 Sources/OpenDefendrWatchr/                # Library target: OpenDefendrWatchrKit
   App/WatchrApp.swift                     # MenuBarExtra scene, .accessory activation policy
   Model/MemorySample.swift                # Value types for one poll tick
@@ -32,6 +33,7 @@ Sources/OpenDefendrWatchr/                # Library target: OpenDefendrWatchrKit
   Preferences/Preferences.swift           # UserDefaults + SMAppService launch-at-login
   UI/MenuBarContentView.swift             # Menu contents and confirmation dialogs
   UI/PreferencesView.swift                # Settings window
+  Update/UpdateManager.swift              # AppUpdater: daily check, prepare, install
   Info.plist                              # LSUIElement=true, bundle id, __VERSION__ token
 Sources/OpenDefendrWatchrApp/main.swift   # Executable entry point, --probe mode
 Tests/OpenDefendrWatchrTests/             # Unit tests (XCTest)
@@ -136,6 +138,23 @@ profile.
 Changing the bundle identifier, executable name, `Info.plist` layout, minimum macOS
 version or entitlements breaks the broker profile `opendefendrwatchr` and requires a
 reviewed change there first.
+
+### In-app updates
+
+- AppUpdater looks for exactly one asset name: `OpenDefendrWatchr-X.Y.Z.dmg`. The broker
+  publishes it as a copy of `OpenDefendrWatchr-vX.Y.Z-macOS-arm64.dmg`, next to the
+  matching `.zip`. A release without it is invisible to installed apps.
+- No `GitHubAttestationPolicy`: the broker builds in its own repository, so there is no
+  provenance from this repo to verify. Trust rests on the Developer ID Team ID, signing
+  identifier and bundle identifier check AppUpdater always performs. Do not add a policy
+  without first making the broker emit matching attestations.
+- AppUpdater has SwiftPM resources. `AppUpdater_AppUpdater.bundle` (flat, no Info.plist)
+  is copied from the `swift build` bin dir into `Contents/Resources/` by both the broker
+  and `scripts/build_swift_app.sh`. It is only read on the attestation path.
+- `Package.resolved` is committed and the broker builds with
+  `--only-use-versions-from-resolved-file`, refusing sources whose lock differs from its
+  own copy. Bumping AppUpdater (or anything it pulls in) therefore needs a reviewed broker
+  change first; `Package.swift` pins it with `exact:` for the same reason.
 
 ## Git
 

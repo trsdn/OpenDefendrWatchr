@@ -15,9 +15,15 @@ let package = Package(
             targets: ["OpenDefendrWatchrApp"]
         ),
     ],
+    dependencies: [
+        // Pinned exactly: the notarization broker builds with
+        // `--only-use-versions-from-resolved-file` against its own copy of Package.resolved.
+        .package(url: "https://github.com/mxcl/AppUpdater.git", exact: "4.1.2"),
+    ],
     targets: [
         .target(
             name: "OpenDefendrWatchrKit",
+            dependencies: [.product(name: "AppUpdater", package: "AppUpdater")],
             path: "Sources/OpenDefendrWatchr",
             exclude: ["Info.plist"],
             swiftSettings: [.swiftLanguageMode(.v5)]

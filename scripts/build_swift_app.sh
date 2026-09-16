@@ -34,7 +34,8 @@ VERSION="${VERSION:-0.0.0}"
 echo "=== Building $APP_NAME $VERSION ($CONFIGURATION) ==="
 swift build -c "$CONFIGURATION"
 
-BINARY_PATH=".build/$CONFIGURATION/$APP_NAME"
+BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
+BINARY_PATH="$BIN_DIR/$APP_NAME"
 if [[ ! -f "$BINARY_PATH" ]]; then
   echo "Build failed: binary not found at $BINARY_PATH" >&2
   exit 1
@@ -45,6 +46,15 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp "$BINARY_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
+
+# AppUpdater ships SwiftPM resources (Sigstore trust roots). The notarization broker copies
+# this bundle into Contents/Resources, so local bundles do the same to match its layout.
+RESOURCE_BUNDLE="$BIN_DIR/AppUpdater_AppUpdater.bundle"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
+  echo "Build failed: resource bundle not found at $RESOURCE_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Contents/Resources/"
 
 # Info.plist carries LSUIElement=true, which is what keeps this a menu-bar-only app
 # with no Dock icon.
