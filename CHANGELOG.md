@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-16
+
 ### Added
 
 - In-app updates via [AppUpdater](https://github.com/mxcl/AppUpdater): a daily background
