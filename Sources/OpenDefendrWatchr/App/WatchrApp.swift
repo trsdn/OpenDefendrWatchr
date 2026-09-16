@@ -5,22 +5,26 @@ import SwiftUI
 public struct WatchrApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = WatchdogModel()
+    @StateObject private var updates = UpdateManager()
 
     public init() {}
 
     public var body: some Scene {
         MenuBarExtra {
-            MenuBarContentView(model: model)
+            MenuBarContentView(model: model, updates: updates)
         } label: {
             // Glyph + compact figure. The glyph changes shape (not just colour) with
             // severity so it stays readable as a template image in light and dark menu bars.
             Label(model.menuBarTitle, systemImage: model.severity.symbolName)
-                .onAppear { model.start() }
+                .onAppear {
+                    model.start()
+                    updates.startAutomaticChecks()
+                }
         }
         .menuBarExtraStyle(.menu)
 
         Settings {
-            PreferencesView(preferences: model.preferences)
+            PreferencesView(preferences: model.preferences, updates: updates)
         }
     }
 }

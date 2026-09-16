@@ -165,6 +165,20 @@ bundle identifier, executable, layout, architecture, entitlements or minimum mac
 requires a reviewed profile update there — including the check that `LSUIElement` is still
 set, so the app cannot silently regain a Dock icon.
 
+### Updates
+
+The app checks [GitHub Releases](https://github.com/trsdn/OpenDefendrWatchr/releases) for a
+newer version once a day (and on demand via **Check for Updates…** in the menu), using
+[AppUpdater](https://github.com/mxcl/AppUpdater). A newer release is downloaded and validated
+in the background; nothing is installed until you choose **Install Update X.Y.Z and
+Restart**, which pauses monitoring, replaces the app and relaunches it. Automatic checks can
+be switched off in the menu or in Settings. A failed background check is only logged.
+
+AppUpdater only accepts a release asset named exactly `OpenDefendrWatchr-X.Y.Z.dmg` whose app
+carries the same Team ID, signing identifier and bundle identifier as the running one. The
+broker publishes that file alongside the versioned `-macOS-arm64` zip and dmg, so no manual
+upload is needed. Builds from `make bundle` are signed differently and will refuse updates.
+
 `make probe` is also the quickest sanity check:
 
 ```
